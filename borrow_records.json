@@ -1,0 +1,75 @@
+{
+  "records": [
+    {
+      "id": "BRB6036752",
+      "code": "T001",
+      "toy_name": "乐高积木基础装",
+      "borrower": "小班(张三)",
+      "qty": 3,
+      "qty_returned": 3,
+      "borrow_date": "2026-06-09",
+      "due_date": "2026-07-09",
+      "original_due": "2026-07-09",
+      "status": "closed",
+      "operator": "李老师",
+      "renew_count": 0,
+      "returns": [
+        {
+          "date": "2026-06-09",
+          "qty": 1,
+          "condition": "完好",
+          "operator": "李老师"
+        },
+        {
+          "date": "2026-06-09",
+          "qty": 2,
+          "condition": "完好",
+          "operator": "李老师"
+        }
+      ]
+    },
+    {
+      "id": "BR1782DD98",
+      "code": "T001",
+      "toy_name": "乐高积木基础装",
+      "borrower": "中班(李四)",
+      "qty": 2,
+      "qty_returned": 0,
+      "borrow_date": "2026-06-09",
+      "due_date": "2026-07-23",
+      "original_due": "2026-07-09",
+      "status": "active",
+      "operator": "王老师",
+      "renew_count": 1,
+      "returns": []
+    },
+    {
+      "id": "BRC4165D50",
+      "code": "T002",
+      "toy_name": "毛绒小熊公仔",
+      "borrower": "小班(张三)",
+      "qty": 2,
+      "qty_returned": 2,
+      "borrow_date": "2026-06-09",
+      "due_date": "2026-05-01",
+      "original_due": "2026-05-01",
+      "status": "closed",
+      "operator": "李老师",
+      "renew_count": 0,
+      "returns": [
+        {
+          "date": "2026-06-09",
+          "qty": 1,
+          "condition": "完好",
+          "operator": "李老师"
+        },
+        {
+          "date": "2026-06-09",
+          "qty": 1,
+          "condition": "待维修",
+          "operator": "李老师"
+        }
+      ]
+    }
+  ]
+}

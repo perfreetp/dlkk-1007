@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-玩具仓库盘点命令行工具 - 适用于幼儿园或玩具租赁仓
+玩具仓库盘点命令行工具 V2 - 适用于幼儿园或玩具租赁仓
+支持细分数量口径(总库存/在库/借出/维修/报废)、借出明细台账、盘点会话
 """
 
 import argparse
@@ -12,12 +13,15 @@ import sys
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from collections import defaultdict
 
 
 BASE_DIR = Path.cwd()
 CONFIG_FILE = BASE_DIR / "config.json"
 INVENTORY_FILE = BASE_DIR / "inventory.json"
 LOGS_FILE = BASE_DIR / "logs.json"
+BORROW_FILE = BASE_DIR / "borrow_records.json"
+COUNT_FILE = BASE_DIR / "count_sessions.json"
 
 
 # ==================== 数据存储辅助函数 ====================
@@ -52,10 +56,40 @@ def save_config(cfg):
 
 
 def get_inventory():
-    return load_json(INVENTORY_FILE, {"items": {}})
+    inv = load_json(INVENTORY_FILE, {"items": {}})
+    if "items" not in inv:
+        inv["items"] = {}
+    for code, it in inv["items"].items():
+        if "qty_total" not in it:
+            old_qty = it.get("quantity", 0)
+            old_status = it.get("status", "在库")
+            it["qty_total"] = max(old_qty, 0)
+            if old_status == "借出":
+                it["qty_borrowed"] = old_qty
+                it["qty_available"] = 0
+            elif old_status == "报废":
+                it["qty_scrapped"] = old_qty
+                it["qty_available"] = 0
+                it["qty_total"] = 0
+            elif old_status == "待维修":
+                it["qty_repair"] = old_qty
+                it["qty_available"] = 0
+            else:
+                it["qty_available"] = old_qty
+                it["qty_borrowed"] = 0
+                it["qty_repair"] = 0
+                it["qty_scrapped"] = 0
+            it["status"] = recompute_status(it)
+            it["borrower"] = ""
+            it["borrow_date"] = ""
+            it["due_date"] = ""
+            it["quantity"] = it["qty_available"]
+    return inv
 
 
 def save_inventory(inv):
+    for code, it in inv["items"].items():
+        it["quantity"] = it.get("qty_available", 0)
     save_json(INVENTORY_FILE, inv)
 
 
@@ -65,6 +99,22 @@ def get_logs():
 
 def save_logs(logs):
     save_json(LOGS_FILE, logs)
+
+
+def get_borrow_records():
+    return load_json(BORROW_FILE, {"records": []})
+
+
+def save_borrow_records(data):
+    save_json(BORROW_FILE, data)
+
+
+def get_count_sessions():
+    return load_json(COUNT_FILE, {"sessions": [], "active_id": None})
+
+
+def save_count_sessions(data):
+    save_json(COUNT_FILE, data)
 
 
 def log_action(action, detail, operator=None):
@@ -82,6 +132,33 @@ def log_action(action, detail, operator=None):
 
 def now_str():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def new_id(prefix=""):
+    return prefix + str(uuid.uuid4())[:8].upper()
+
+
+def recompute_status(item):
+    qb = item.get("qty_borrowed", 0)
+    qr = item.get("qty_repair", 0)
+    qa = item.get("qty_available", 0)
+    qs = item.get("qty_scrapped", 0)
+    if qa == 0 and qb == 0 and qr == 0 and (qs > 0 or item.get("qty_total", 0) == 0):
+        return "报废"
+    if qr > 0 and qa == 0 and qb == 0:
+        return "待维修"
+    if qb > 0 and qa == 0:
+        return "借出"
+    return "在库"
+
+
+def short_status_text(item):
+    parts = []
+    for k, name in [("qty_available", "在库"), ("qty_borrowed", "借出"), ("qty_repair", "维修"), ("qty_scrapped", "报废")]:
+        v = item.get(k, 0)
+        if v > 0:
+            parts.append(f"{name}{v}")
+    return "/".join(parts) if parts else "空"
 
 
 def print_table(headers, rows):
@@ -107,17 +184,30 @@ def print_table(headers, rows):
     print(separator)
 
 
+def find_active_session():
+    cs = get_count_sessions()
+    aid = cs.get("active_id")
+    if aid:
+        for s in cs["sessions"]:
+            if s["id"] == aid and s["status"] != "closed":
+                return cs, s
+    return cs, None
+
+
 # ==================== init 命令 ====================
 
 def cmd_init(args):
-    """初始化库位结构"""
     cfg = get_config()
     if cfg.get("initialized") and not args.force:
         print("⚠ 仓库已初始化。如需重新初始化请使用 --force 参数")
         return
+    if args.force and cfg.get("initialized") and not args.yes:
+        ans = input("确认强制初始化? 会重置库位配置但不清空库存 [y/N]: ").strip().lower()
+        if ans != "y":
+            print("已取消")
+            return
 
     print("=== 玩具仓库库位初始化 ===")
-    
     rows = args.rows if args.rows else 3
     cols = args.cols if args.cols else 4
     shelves_per_loc = args.shelves if args.shelves else 2
@@ -133,26 +223,24 @@ def cmd_init(args):
                 "capacity": args.capacity or 50,
                 "created_at": now_str()
             }
-    
+
     cfg["locations"] = locations
     cfg["initialized"] = True
     if args.overdue_days:
         cfg["overdue_days"] = args.overdue_days
     save_config(cfg)
-    log_action("INIT", f"初始化库位: {len(locations)}个区域, 每区{shelves_per_loc}层货架, 共{rows}行{cols}列")
-    
+    log_action("INIT", f"初始化库位: {len(locations)}个区域, 每区{shelves_per_loc}层货架, {rows}行{cols}列")
+
     print(f"\n✅ 初始化成功！共创建 {len(locations)} 个库位区域：")
     headers = ["库位编号", "描述", "货架列表", "容量"]
-    table_rows = []
-    for code, loc in locations.items():
-        table_rows.append([code, loc["description"], ", ".join(loc["shelves"]), loc["capacity"]])
+    table_rows = [[code, loc["description"], ", ".join(loc["shelves"]), loc["capacity"]]
+                  for code, loc in locations.items()]
     print_table(headers, table_rows)
 
 
 # ==================== import 命令 ====================
 
 def cmd_import(args):
-    """导入玩具台账（支持CSV/JSON）"""
     cfg = get_config()
     if not cfg.get("initialized"):
         print("❌ 仓库尚未初始化，请先运行 init 命令")
@@ -195,15 +283,14 @@ def cmd_import(args):
         if not code:
             skipped += 1
             continue
-        
-        if code in items and not args.update:
+        exists = code in items
+        if exists and not args.update:
             skipped += 1
             continue
 
         location = toy.get("库位") or toy.get("location") or default_location
         if not location:
             location = locations[0] if locations else "A01-01"
-        
         shelf = toy.get("货架") or toy.get("shelf")
         if location in cfg["locations"] and not shelf:
             shelf = cfg["locations"][location]["shelves"][0]
@@ -213,56 +300,84 @@ def cmd_import(args):
             quantity = int(qty_raw)
         except (ValueError, TypeError):
             quantity = 1
+        try:
+            price = float(toy.get("单价") or toy.get("price") or 0)
+        except (ValueError, TypeError):
+            price = 0.0
 
-        items[code] = {
+        old = items.get(code, {})
+        qb_old = old.get("qty_borrowed", 0)
+        qr_old = old.get("qty_repair", 0)
+        qs_old = old.get("qty_scrapped", 0)
+        if exists:
+            qa = quantity
+            qt = quantity + qb_old + qr_old
+        else:
+            qa = quantity
+            qb_old = 0
+            qr_old = 0
+            qs_old = 0
+            qt = quantity
+
+        new_item = {
             "code": code,
-            "name": toy.get("名称") or toy.get("name") or f"玩具{code}",
-            "category": toy.get("分类") or toy.get("category") or "未分类",
-            "brand": toy.get("品牌") or toy.get("brand") or "",
-            "age_range": toy.get("适用年龄") or toy.get("age") or "",
+            "name": toy.get("名称") or toy.get("name") or old.get("name") or f"玩具{code}",
+            "category": toy.get("分类") or toy.get("category") or old.get("category") or "未分类",
+            "brand": toy.get("品牌") or toy.get("brand") or old.get("brand") or "",
+            "age_range": toy.get("适用年龄") or toy.get("age") or old.get("age_range") or "",
             "location": location,
-            "shelf": shelf or "",
-            "quantity": quantity,
-            "price": float(toy.get("单价") or toy.get("price") or 0),
-            "condition": "完好",
-            "status": "在库",
+            "shelf": shelf or old.get("shelf") or "",
+            "price": price,
+            "condition": old.get("condition", "完好"),
+            "qty_total": qt,
+            "qty_available": qa,
+            "qty_borrowed": qb_old,
+            "qty_repair": qr_old,
+            "qty_scrapped": qs_old,
+            "quantity": qa,
+            "inbound_date": toy.get("入库日期") or toy.get("inbound_date") or old.get("inbound_date") or now_str()[:10],
+            "last_scan": old.get("last_scan", ""),
+            "scan_count": old.get("scan_count", 0),
+            "remarks": toy.get("备注") or toy.get("remarks") or old.get("remarks") or "",
             "borrower": "",
             "borrow_date": "",
-            "due_date": "",
-            "inbound_date": toy.get("入库日期") or toy.get("inbound_date") or now_str()[:10],
-            "last_scan": "",
-            "scan_count": 0,
-            "remarks": toy.get("备注") or toy.get("remarks") or ""
+            "due_date": ""
         }
+        new_item["status"] = recompute_status(new_item)
+        items[code] = new_item
         imported += 1
 
     inv["items"] = items
     save_inventory(inv)
-    log_action("IMPORT", f"导入玩具台账: 成功{imported}条, 跳过{skipped}条, 来源文件: {filepath.name}")
-    
+    log_action("IMPORT", f"导入玩具台账: 成功{imported}条, 跳过{skipped}条, 来源: {filepath.name}")
+
     print(f"\n✅ 导入完成！成功 {imported} 条，跳过 {skipped} 条")
     if imported > 0:
         print("\n前5条记录预览：")
-        headers = ["编号", "名称", "分类", "库位", "货架", "数量"]
+        headers = ["编号", "名称", "分类", "库位", "总库存", "在库", "借出", "维修", "报废"]
         rows = []
         for i, (code, item) in enumerate(list(items.items())[-imported:]):
             if i >= 5:
                 break
-            rows.append([code, item["name"], item["category"], item["location"], item["shelf"], item["quantity"]])
+            rows.append([code, item["name"], item["category"], item["location"],
+                         item.get("qty_total", 0), item.get("qty_available", 0),
+                         item.get("qty_borrowed", 0), item.get("qty_repair", 0), item.get("qty_scrapped", 0)])
         print_table(headers, rows)
 
 
-# ==================== scan 命令 ====================
+# ==================== scan 命令 (V2重写) ====================
 
 def cmd_scan(args):
-    """扫码操作：入库/借出/归还/报废"""
     cfg = get_config()
     inv = get_inventory()
     items = inv["items"]
+    borrow_db = get_borrow_records()
+    borrow_list = borrow_db["records"]
 
     op = args.operation
     operator = args.operator or cfg.get("operator", "system")
     codes = args.codes if args.codes else []
+    qty_per = max(1, args.qty or 1)
 
     if not codes:
         print("请输入玩具编号（一行一个，输入空行结束）：")
@@ -274,7 +389,6 @@ def cmd_scan(args):
                 codes.append(line)
             except EOFError:
                 break
-
     if not codes:
         print("❌ 未输入任何编号")
         return
@@ -284,6 +398,7 @@ def cmd_scan(args):
     details_list = []
 
     for code in codes:
+        # ========= 入库 =========
         if op == "inbound":
             loc = args.location
             if not loc:
@@ -293,112 +408,234 @@ def cmd_scan(args):
                 failed.append((code, f"库位{loc}不存在"))
                 continue
             shelf = args.shelf or cfg["locations"][loc]["shelves"][0]
-            
+
             if code in items:
-                items[code]["quantity"] += args.qty
-                items[code]["location"] = loc
-                items[code]["shelf"] = shelf
-                items[code]["status"] = "在库"
-                items[code]["condition"] = "完好"
+                it = items[code]
+                it["qty_available"] += qty_per
+                it["qty_total"] += qty_per
+                it["location"] = loc
+                it["shelf"] = shelf
+                if it["qty_available"] > 0:
+                    it["condition"] = "完好"
             else:
                 name = args.name or f"玩具{code}"
                 items[code] = {
-                    "code": code,
-                    "name": name,
+                    "code": code, "name": name,
                     "category": args.category or "未分类",
-                    "brand": args.brand or "",
-                    "age_range": args.age or "",
-                    "location": loc,
-                    "shelf": shelf,
-                    "quantity": args.qty,
-                    "price": args.price or 0,
-                    "condition": "完好",
-                    "status": "在库",
-                    "borrower": "",
-                    "borrow_date": "",
-                    "due_date": "",
+                    "brand": args.brand or "", "age_range": args.age or "",
+                    "location": loc, "shelf": shelf,
+                    "price": args.price or 0, "condition": "完好",
+                    "status": "在库", "borrower": "", "borrow_date": "", "due_date": "",
+                    "qty_total": qty_per, "qty_available": qty_per,
+                    "qty_borrowed": 0, "qty_repair": 0, "qty_scrapped": 0,
+                    "quantity": qty_per,
                     "inbound_date": now_str()[:10],
-                    "last_scan": now_str(),
-                    "scan_count": 1,
-                    "remarks": ""
+                    "last_scan": now_str(), "scan_count": 1, "remarks": ""
                 }
             items[code]["last_scan"] = now_str()
-            items[code]["scan_count"] += 1
+            items[code]["scan_count"] = items[code].get("scan_count", 0) + 1
+            items[code]["status"] = recompute_status(items[code])
             success.append(code)
-            details_list.append(f"{code}入库: 库位{loc}/{shelf}, 数量{args.qty}")
+            details_list.append(f"{code}入库+{qty_per}: 库位{loc}/{shelf}")
 
+        # ========= 借出 =========
         elif op == "borrow":
             if code not in items:
                 failed.append((code, "编号不存在"))
                 continue
-            if items[code]["status"] == "借出":
-                failed.append((code, f"已被{items[code]['borrower']}借出"))
+            it = items[code]
+            available = it.get("qty_available", 0)
+            if available <= 0:
+                failed.append((code, f"可用库存为0 (总口径:{short_status_text(it)})"))
                 continue
-            if items[code]["quantity"] <= 0:
-                failed.append((code, "库存不足"))
+            if qty_per > available:
+                failed.append((code, f"超出可用库存: 借{qty_per}/在库{available}"))
                 continue
             if not args.borrower:
                 failed.append((code, "未指定借出人(-b)"))
                 continue
-            items[code]["status"] = "借出"
-            items[code]["borrower"] = args.borrower
-            items[code]["borrow_date"] = now_str()[:10]
-            overdue = cfg.get("overdue_days", 30)
-            due = (datetime.now() + timedelta(days=overdue)).strftime("%Y-%m-%d")
-            items[code]["due_date"] = args.due or due
-            items[code]["quantity"] -= args.qty
-            items[code]["last_scan"] = now_str()
-            items[code]["scan_count"] += 1
-            success.append(code)
-            details_list.append(f"{code}借出: {args.borrower}, 到期{items[code]['due_date']}")
 
+            overdue_days = cfg.get("overdue_days", 30)
+            due_date_str = args.due or (datetime.now() + timedelta(days=overdue_days)).strftime("%Y-%m-%d")
+            borrow_date_str = now_str()[:10]
+
+            rec_id = new_id("BR")
+            borrow_list.append({
+                "id": rec_id,
+                "code": code,
+                "toy_name": it["name"],
+                "borrower": args.borrower,
+                "qty": qty_per,
+                "qty_returned": 0,
+                "borrow_date": borrow_date_str,
+                "due_date": due_date_str,
+                "original_due": due_date_str,
+                "status": "active",
+                "operator": operator,
+                "renew_count": 0,
+                "returns": []
+            })
+
+            it["qty_available"] -= qty_per
+            it["qty_borrowed"] += qty_per
+            it["last_scan"] = now_str()
+            it["scan_count"] += 1
+            it["status"] = recompute_status(it)
+            it["borrower"] = ""
+            it["borrow_date"] = ""
+            it["due_date"] = ""
+
+            success.append(code)
+            details_list.append(f"[{rec_id}]{code}x{qty_per}借给{args.borrower},到期{due_date_str}")
+
+        # ========= 归还 =========
         elif op == "return":
             if code not in items:
                 failed.append((code, "编号不存在"))
                 continue
-            if items[code]["status"] != "借出":
-                failed.append((code, f"当前状态为{items[code]['status']}"))
+            it = items[code]
+            candidates = [r for r in borrow_list
+                          if r["code"] == code and r["status"] in ("active", "partial", "overdue")]
+            if not candidates:
+                failed.append((code, "无未结清借出记录"))
                 continue
+            if args.borrower:
+                match = [r for r in candidates if r["borrower"] == args.borrower]
+                if match:
+                    candidates = match
+            candidates.sort(key=lambda r: r["borrow_date"])
+
+            returned_total = 0
+            remaining_needed = qty_per
+            rec_ids_used = []
             condition = args.condition or "完好"
-            items[code]["status"] = "在库"
-            items[code]["quantity"] += args.qty
-            items[code]["condition"] = condition
+            to_repair = (condition in ("轻微破损", "待维修", "破损"))
+
+            for rec in candidates:
+                if remaining_needed <= 0:
+                    break
+                outstanding = rec["qty"] - rec["qty_returned"]
+                take = min(remaining_needed, outstanding)
+                rec["qty_returned"] += take
+                remaining_needed -= take
+                returned_total += take
+                rec_ids_used.append(f"{rec['id']}x{take}")
+                rec["returns"].append({
+                    "date": now_str()[:10],
+                    "qty": take,
+                    "condition": condition,
+                    "operator": operator
+                })
+                rec["status"] = "closed" if rec["qty_returned"] >= rec["qty"] else "partial"
+
+            if returned_total <= 0:
+                failed.append((code, "没有可归还的数量"))
+                continue
+
+            if to_repair:
+                it["qty_repair"] += returned_total
+                it["condition"] = condition
+            else:
+                it["qty_available"] += returned_total
+                it["condition"] = "完好"
+            it["qty_borrowed"] -= returned_total
+            it["last_scan"] = now_str()
+            it["scan_count"] += 1
+            it["status"] = recompute_status(it)
+
+            # 全部归还完毕则清理
+            if it["qty_borrowed"] == 0:
+                it["borrower"] = ""
+                it["borrow_date"] = ""
+                it["due_date"] = ""
+
+            success.append(code)
+            suffix = f" 还差{remaining_needed}件" if remaining_needed > 0 else ""
+            details_list.append(f"{code}归还{returned_total}件({condition}): {','.join(rec_ids_used)}{suffix}")
+
+        # ========= 续借 =========
+        elif op == "renew":
+            if code not in items:
+                failed.append((code, "编号不存在"))
+                continue
+            candidates = [r for r in borrow_list
+                          if r["code"] == code and r["status"] in ("active", "partial", "overdue")]
+            if not candidates:
+                failed.append((code, "无进行中的借出记录"))
+                continue
+            if args.borrower:
+                match = [r for r in candidates if r["borrower"] == args.borrower]
+                if match:
+                    candidates = match
+            days = args.renew_days or cfg.get("overdue_days", 30)
+            for rec in candidates:
+                old_due = rec["due_date"]
+                try:
+                    base = max(datetime.now().date(), datetime.strptime(rec["due_date"], "%Y-%m-%d").date())
+                except ValueError:
+                    base = datetime.now().date()
+                new_due = (base + timedelta(days=days)).strftime("%Y-%m-%d")
+                rec["due_date"] = new_due
+                rec["renew_count"] += 1
+                rec["status"] = "active"
+                details_list.append(f"[{rec['id']}]{code}续借{days}天 {old_due}→{new_due} ({rec['borrower']})")
+            success.append(code)
             items[code]["last_scan"] = now_str()
             items[code]["scan_count"] += 1
-            if condition != "完好":
-                items[code]["status"] = "待维修"
-            success.append(code)
-            details_list.append(f"{code}归还: 状态{condition}")
 
+        # ========= 报废 =========
         elif op == "scrap":
             if code not in items:
                 failed.append((code, "编号不存在"))
                 continue
+            it = items[code]
+            available = it.get("qty_available", 0)
+            repair = it.get("qty_repair", 0)
+            if args.from_repair:
+                if qty_per > repair:
+                    failed.append((code, f"维修中仅{repair}件, 不足以报废{qty_per}"))
+                    continue
+                it["qty_repair"] -= qty_per
+            else:
+                if qty_per > available:
+                    failed.append((code, f"在库可用仅{available}件, 不足以报废{qty_per}(维修报废加--from-repair)"))
+                    continue
+                it["qty_available"] -= qty_per
+
             reason = args.reason or "无原因"
-            items[code]["status"] = "报废"
-            items[code]["condition"] = "破损"
-            items[code]["quantity"] = 0
-            items[code]["last_scan"] = now_str()
-            items[code]["scan_count"] += 1
-            items[code]["remarks"] = f"报废原因: {reason}"
+            it["qty_scrapped"] += qty_per
+            it["qty_total"] = max(0, it.get("qty_total", 0) - qty_per)
+            it["condition"] = "破损"
+            it["last_scan"] = now_str()
+            it["scan_count"] += 1
+            it["status"] = recompute_status(it)
+            it["remarks"] = f"{now_str()[:10]}报废{qty_per}件:{reason} | " + (it.get("remarks") or "")
             success.append(code)
-            details_list.append(f"{code}报废: {reason}")
+            details_list.append(f"{code}报废{qty_per}件(原因:{reason})")
 
     save_inventory(inv)
-    log_action(f"SCAN-{op.upper()}", f"操作人:{operator}; 成功:{len(success)}条{', '.join(success)}; 失败:{len(failed)}条; 详情:{'; '.join(details_list)}", operator)
+    save_borrow_records(borrow_db)
+    log_action(
+        f"SCAN-{op.upper()}",
+        f"操作人:{operator}; 成功{len(success)}件[{','.join(success[:15])}]; 失败{len(failed)}件; {'; '.join(details_list[:800])}",
+        operator
+    )
 
     print(f"\n📊 操作结果【{op}】操作人: {operator}")
-    print(f"  成功: {len(success)} 件 {success[:10]}{'...' if len(success) > 10 else ''}")
+    print(f"  成功: {len(success)} 件 {success[:12]}{'...' if len(success) > 12 else ''}")
     if failed:
         print(f"  失败: {len(failed)} 件")
         for c, r in failed:
             print(f"    - {c}: {r}")
+    if details_list:
+        print(f"\n  明细:")
+        for d in details_list[:12]:
+            print(f"    • {d}")
 
 
 # ==================== move 命令 ====================
 
 def cmd_move(args):
-    """库位调拨"""
     cfg = get_config()
     inv = get_inventory()
     items = inv["items"]
@@ -414,21 +651,17 @@ def cmd_move(args):
         target_shelf = args.shelf or cfg["locations"][args.to]["shelves"][0]
         moved = 0
         for code, item in items.items():
-            if item["location"] == args.all_from and item["status"] == "在库":
-                old = f"{item['location']}/{item['shelf']}"
+            if item["location"] == args.all_from:
                 item["location"] = args.to
                 item["shelf"] = target_shelf
                 moved += 1
         save_inventory(inv)
-        log_action("MOVE-ALL", f"整库调拨: {args.all_from} -> {args.to}/{target_shelf}, 共{moved}件", operator)
+        log_action("MOVE-ALL", f"整库调拨 {args.all_from} -> {args.to}/{target_shelf}, {moved}件", operator)
         print(f"✅ 整库调拨完成：从 {args.all_from} 调拨 {moved} 件到 {args.to}/{target_shelf}")
         return
 
     if not args.codes:
         print("❌ 请指定要调拨的玩具编号 (--codes) 或整库调拨 (--all-from)")
-        return
-    if not args.to:
-        print("❌ 请指定目标库位 (--to)")
         return
     if args.to not in cfg["locations"]:
         print(f"❌ 目标库位 {args.to} 不存在")
@@ -437,7 +670,6 @@ def cmd_move(args):
     target_shelf = args.shelf or cfg["locations"][args.to]["shelves"][0]
     success = []
     failed = []
-
     for code in args.codes:
         if code not in items:
             failed.append((code, "编号不存在"))
@@ -450,56 +682,386 @@ def cmd_move(args):
 
     save_inventory(inv)
     details = "; ".join(f"{c}: {o} -> {args.to}/{target_shelf}" for c, o in success)
-    log_action("MOVE", f"操作人:{operator}; 成功{len(success)}件; {details}", operator)
+    log_action("MOVE", f"操作人:{operator}; 成功{len(success)}件; {details[:800]}", operator)
 
     print(f"\n📦 库位调拨结果  操作人: {operator}")
     print(f"  成功: {len(success)} 件")
-    headers = ["编号", "原库位", "新库位"]
-    rows = [[c, o, f"{args.to}/{target_shelf}"] for c, o in success]
+    headers = ["编号", "名称", "原库位", "新库位", "数量口径"]
+    rows = [[c, items[c]["name"], o, f"{args.to}/{target_shelf}", short_status_text(items[c])] for c, o in success]
     print_table(headers, rows)
     if failed:
-        print(f"  失败: {len(failed)} 件")
         for c, r in failed:
-            print(f"    - {c}: {r}")
+            print(f"  失败 - {c}: {r}")
+
+
+# ==================== 盘点会话核心 ====================
+
+def cmd_count_start(args):
+    cfg = get_config()
+    operator = args.operator or cfg.get("operator", "system")
+    cs_obj, active = find_active_session()
+    if active and not args.force:
+        print(f"⚠ 已有进行中的盘点会话 [{active['id']}] (库位:{active.get('location','全部')})")
+        print("  请先 count-close 或 count-abort")
+        return
+
+    loc = args.location
+    if loc and loc not in cfg["locations"]:
+        print(f"❌ 库位 {loc} 不存在")
+        return
+
+    cs_obj = get_count_sessions()
+    session_id = new_id("CNT")
+    session = {
+        "id": session_id,
+        "started_at": now_str(),
+        "finished_at": None,
+        "operator": operator,
+        "location": loc or "ALL",
+        "status": "draft",
+        "counts": {},
+        "book_snapshot": {},
+        "adjustments_made": False,
+        "note": args.note or ""
+    }
+    inv = get_inventory()
+    for code, it in inv["items"].items():
+        if loc and it["location"] != loc:
+            continue
+        qt = it.get("qty_total", 0)
+        qa = it.get("qty_available", 0)
+        qb = it.get("qty_borrowed", 0)
+        qr = it.get("qty_repair", 0)
+        qs = it.get("qty_scrapped", 0)
+        session["book_snapshot"][code] = {
+            "name": it["name"], "category": it["category"],
+            "location": it["location"], "shelf": it["shelf"],
+            "qty_total": qt, "qty_available": qa, "qty_borrowed": qb,
+            "qty_repair": qr, "qty_scrapped": qs,
+            "qty_onhand_book": qa + qr   # 应在场 = 在库+维修 (借出不在场)
+        }
+    cs_obj["sessions"].append(session)
+    cs_obj["active_id"] = session_id
+    save_count_sessions(cs_obj)
+    log_action("COUNT-START", f"开启会话{session_id}, 库位={session['location']}, 账面{len(session['book_snapshot'])}个品种", operator)
+
+    print(f"\n✅ 盘点会话已开启 [{session_id}]")
+    print(f"  库位范围: {session['location']}  操作人: {operator}")
+    print(f"  账面应盘: {len(session['book_snapshot'])} 个品种")
+    print(f"\n  下一步命令:")
+    print(f"    count-scan --interactive                 # 交互式扫码录入实盘")
+    print(f"    count-scan T001 10 T002 8 ...            # 命令行批量录入")
+    print(f"    count-diff                                # 查看账面vs实盘差异")
+    print(f"    count-close [--apply]                     # 关闭(可选一键调账)")
+
+
+def cmd_count_scan(args):
+    cs_obj, session = find_active_session()
+    if not session:
+        print("❌ 没有进行中的盘点会话，请先 count-start")
+        return
+
+    entries = args.entries
+    pairs = []
+    if entries:
+        for raw in entries:
+            parts = raw.strip().split()
+            if not parts:
+                continue
+            code = parts[0]
+            qty = int(parts[1]) if len(parts) > 1 and parts[1].lstrip("-").isdigit() else 1
+            pairs.append((code, qty))
+
+    if args.interactive:
+        print(f"\n📋 盘点会话 [{session['id']}] 实盘录入 (输入 q 或空行结束)")
+        print("  格式: <编号> [数量]   例: T001 5")
+        while True:
+            try:
+                line = input("> ").strip()
+                if line.lower() in ("q", "quit", "exit", ""):
+                    break
+                parts = line.split()
+                code = parts[0]
+                qty = int(parts[1]) if len(parts) > 1 and parts[1].lstrip("-").isdigit() else 1
+                pairs.append((code, qty))
+            except (EOFError, ValueError):
+                continue
+
+    if not pairs:
+        print("❌ 未录入任何数据")
+        return
+
+    updated = new_found = 0
+    inv = None
+    for code, qty in pairs:
+        if code in session["counts"]:
+            session["counts"][code]["qty"] = qty
+        else:
+            snap = session["book_snapshot"].get(code)
+            if snap:
+                session["counts"][code] = {"qty": qty, "name": snap["name"]}
+            else:
+                if inv is None:
+                    inv = get_inventory()
+                name = inv["items"].get(code, {}).get("name", f"未知({code})")
+                session["counts"][code] = {"qty": qty, "name": name, "extra": True}
+                new_found += 1
+        updated += 1
+    session["last_updated"] = now_str()
+    save_count_sessions(cs_obj)
+    log_action("COUNT-SCAN", f"会话{session['id']}录入{len(pairs)}条, 更新{updated}, 盘盈{new_found}")
+    print(f"\n✅ 已录入 {len(pairs)} 条  更新:{updated}  盘盈新编号:{new_found}")
+    print(f"  进度: 已盘 {len(session['counts'])} / 账面应盘 {len(session['book_snapshot'])}")
+
+
+def cmd_count_diff(args):
+    cs_obj, session = find_active_session()
+    if not session:
+        print("❌ 没有进行中的盘点会话，请先 count-start")
+        return
+
+    print(f"\n🔍 盘点差异报告 [{session['id']}] 库位:{session['location']}")
+    print(f"  操作人: {session['operator']}  开始: {session['started_at']}")
+    book = session["book_snapshot"]
+    actual = session["counts"]
+
+    matched = []
+    missing = []
+    diff_rows = []
+    extra = []
+    total_book_onhand = 0
+    total_actual_onhand = 0
+
+    for code, b in book.items():
+        a = actual.get(code)
+        actual_qty = a["qty"] if a else 0
+        book_onhand = b["qty_onhand_book"]
+        total_book_onhand += book_onhand
+        total_actual_onhand += actual_qty
+        diff = actual_qty - book_onhand
+        if a is None:
+            missing.append([code, b["name"], f"{b['qty_available']}+{b['qty_repair']}", book_onhand, 0, f"-{book_onhand}", "未盘到"])
+        elif diff != 0:
+            sign = "+" if diff > 0 else ""
+            diff_rows.append([code, b["name"], f"{b['qty_available']}+{b['qty_repair']}",
+                              book_onhand, actual_qty, f"{sign}{diff}",
+                              "盘盈" if diff > 0 else "盘亏"])
+        else:
+            matched.append(code)
+
+    for code, a in actual.items():
+        if code not in book:
+            extra.append([code, a.get("name", "?"), "-", 0, a["qty"], f"+{a['qty']}", "盘盈(新)"])
+            total_actual_onhand += a["qty"]
+
+    print(f"\n  汇总: 账面在场{len(book)}个品种/{total_book_onhand}件 → 实盘在场{len(actual)}个品种/{total_actual_onhand}件")
+    print(f"         ✔ 相符:{len(matched)}  ⚠ 数量差:{len(diff_rows)}  ❌ 未盘到:{len(missing)}  ➕ 盘盈新:{len(extra)}")
+    if missing:
+        print(f"\n❌ 未盘到 (账面在场但没扫到): {len(missing)}")
+        print_table(["编号", "名称", "细分(在库+维修)", "账面在场", "实盘", "差异", "状态"],
+                    missing[:args.limit] if args.limit else missing)
+    if diff_rows:
+        print(f"\n⚠ 数量不符: {len(diff_rows)}")
+        print_table(["编号", "名称", "细分(在库+维修)", "账面在场", "实盘", "差异", "判定"],
+                    diff_rows[:args.limit] if args.limit else diff_rows)
+    if extra:
+        print(f"\n➕ 盘盈(台账无但实物有): {len(extra)}")
+        print_table(["编号", "名称", "细分", "账面在场", "实盘", "差异", "判定"],
+                    extra[:args.limit] if args.limit else extra)
+    if not missing and not diff_rows and not extra:
+        print("\n✅ 账实完全相符！")
+
+
+def cmd_count_close(args):
+    cs_obj, session = find_active_session()
+    if not session:
+        print("❌ 没有进行中的盘点会话，请先 count-start")
+        return
+    cfg = get_config()
+    operator = args.operator or cfg.get("operator", "system")
+    apply = args.apply
+
+    if apply:
+        inv = get_inventory()
+        items = inv["items"]
+        adjust_count = 0
+        adjust_qty_net = 0
+        details = []
+        locs = list(cfg["locations"].keys())
+        default_loc = locs[0] if locs else "A01-01"
+
+        for code, a in session["counts"].items():
+            actual_qty = a["qty"]
+            if code in items:
+                it = items[code]
+                qa = it.get("qty_available", 0)
+                qr = it.get("qty_repair", 0)
+                book_onhand = qa + qr
+                diff = actual_qty - book_onhand
+                if diff != 0:
+                    new_qa = max(0, qa + diff)
+                    it["qty_available"] = new_qa
+                    it["qty_total"] = max(0, it.get("qty_total", 0) + diff)
+                    if new_qa == 0 and it.get("qty_borrowed", 0) == 0 and qr == 0:
+                        it["qty_scrapped"] = it.get("qty_scrapped", 0) - diff if diff < 0 else it.get("qty_scrapped", 0)
+                    it["status"] = recompute_status(it)
+                    it["last_scan"] = now_str()
+                    it["scan_count"] = it.get("scan_count", 0) + 1
+                    adjust_count += 1
+                    adjust_qty_net += diff
+                    details.append(f"{code}: 在场{book_onhand}→{actual_qty} ({diff:+d})")
+            else:
+                inv["items"][code] = {
+                    "code": code,
+                    "name": a.get("name", f"玩具{code}"),
+                    "category": "盘盈待归类",
+                    "brand": "", "age_range": "",
+                    "location": session["location"] if session["location"] in cfg["locations"] else default_loc,
+                    "shelf": "", "price": 0, "condition": "完好",
+                    "status": "在库", "borrower": "", "borrow_date": "", "due_date": "",
+                    "qty_total": actual_qty, "qty_available": actual_qty,
+                    "qty_borrowed": 0, "qty_repair": 0, "qty_scrapped": 0,
+                    "quantity": actual_qty,
+                    "inbound_date": now_str()[:10],
+                    "last_scan": now_str(), "scan_count": 1,
+                    "remarks": f"盘点盘盈新增, 来源会话{session['id']}"
+                }
+                adjust_count += 1
+                adjust_qty_net += actual_qty
+                details.append(f"{code}: 盘盈新增{actual_qty}件")
+
+        save_inventory(inv)
+        session["adjustments_made"] = True
+        session["adjust_count"] = adjust_count
+        session["adjust_qty_net"] = adjust_qty_net
+        log_action("COUNT-APPLY", f"会话{session['id']}调整{adjust_count}个品种, 净差{adjust_qty_net:+d}; {'; '.join(details[:500])}", operator)
+        print(f"\n🛠 已应用库存调整: {adjust_count} 个品种, 净差异 {adjust_qty_net:+d} 件")
+
+    session["status"] = "closed"
+    session["finished_at"] = now_str()
+    cs_obj["active_id"] = None
+    save_count_sessions(cs_obj)
+    log_action("COUNT-CLOSE", f"关闭盘点会话{session['id']}, 是否调整={'是' if apply else '否'}", operator)
+    print(f"\n✅ 盘点会话 [{session['id']}] 已关闭")
+
+
+def cmd_count_list(args):
+    cs_obj = get_count_sessions()
+    sessions = cs_obj["sessions"]
+    if args.id:
+        for s in sessions:
+            if s["id"] == args.id:
+                print(f"\n📋 盘点会话详情 [{s['id']}]")
+                for k, v in s.items():
+                    if k in ("counts", "book_snapshot"):
+                        print(f"  {k}: {len(v)} 条")
+                    else:
+                        print(f"  {k}: {v}")
+                return
+        print("❌ 会话不存在")
+        return
+    sessions = sessions[-args.limit:] if args.limit else sessions
+    print(f"\n📋 盘点会话列表 (共{len(cs_obj['sessions'])}次)")
+    headers = ["会话ID", "库位", "状态", "操作人", "开始时间", "账面数", "实盘数", "已调整"]
+    rows = [[s["id"], s.get("location", "-"), s["status"], s["operator"], s["started_at"],
+             len(s.get("book_snapshot", {})), len(s.get("counts", {})),
+             "是" if s.get("adjustments_made") else ""] for s in sessions]
+    print_table(headers, rows)
 
 
 # ==================== check 命令 ====================
 
 def cmd_check(args):
-    """按箱盘点 / 逾期提醒"""
+    if hasattr(args, "count_cmd") and args.count_cmd:
+        sub = args.count_cmd
+        if sub == "start":
+            cmd_count_start(args)
+        elif sub == "scan":
+            cmd_count_scan(args)
+        elif sub == "diff":
+            cmd_count_diff(args)
+        elif sub == "close":
+            cmd_count_close(args)
+        elif sub == "list":
+            cmd_count_list(args)
+        elif sub == "abort":
+            cs_obj, s = find_active_session()
+            if s:
+                if not args.yes:
+                    ans = input(f"确认放弃盘点会话 [{s['id']}]? [y/N]: ").strip().lower()
+                    if ans != "y":
+                        print("已取消")
+                        return
+                s["status"] = "closed"
+                s["finished_at"] = now_str()
+                s["aborted"] = True
+                cs_obj["active_id"] = None
+                save_count_sessions(cs_obj)
+                log_action("COUNT-ABORT", f"放弃盘点会话{s['id']}")
+                print(f"✅ 已放弃盘点会话 [{s['id']}]")
+            else:
+                print("❌ 没有进行中的盘点会话")
+        return
+
     cfg = get_config()
     inv = get_inventory()
     items = inv["items"]
+    borrow_db = get_borrow_records()
+    borrow_list = borrow_db["records"]
 
     if args.overdue:
         overdue_days = cfg.get("overdue_days", 30)
         today = datetime.now().date()
         overdue_items = []
-        for code, item in items.items():
-            if item["status"] == "借出" and item["due_date"]:
-                try:
-                    due = datetime.strptime(item["due_date"], "%Y-%m-%d").date()
-                    if today > due:
-                        days_overdue = (today - due).days
-                        overdue_items.append([code, item["name"], item["borrower"], item["borrow_date"], item["due_date"], f"{days_overdue}天"])
-                except ValueError:
-                    continue
-        print(f"\n⚠ 逾期未还清单 (超过{overdue_days}天视为逾期)")
-        headers = ["编号", "名称", "借出人", "借出日期", "应还日期", "逾期天数"]
+        for rec in borrow_list:
+            if rec["status"] not in ("active", "partial", "overdue"):
+                continue
+            if not rec["due_date"]:
+                continue
+            try:
+                due = datetime.strptime(rec["due_date"], "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if today > due:
+                days = (today - due).days
+                outstanding = rec["qty"] - rec["qty_returned"]
+                overdue_items.append([
+                    rec["id"], rec["code"], rec["toy_name"], rec["borrower"],
+                    outstanding, rec["borrow_date"], rec["due_date"], f"{days}天"
+                ])
+                if rec["status"] in ("active", "partial"):
+                    rec["status"] = "overdue"
+        save_borrow_records(borrow_db)
+
+        print(f"\n⚠ 逾期未还清单 (阈值:{overdue_days}天)  共{len(overdue_items)}笔借出单")
+        by_person = defaultdict(lambda: {"records": [], "qty": 0})
+        for r in overdue_items:
+            by_person[r[3]]["records"].append(r)
+            by_person[r[3]]["qty"] += r[4]
+        print(f"  涉及借用人: {len(by_person)} 人")
+        if by_person:
+            print("  逾期责任人汇总:")
+            for p, info in sorted(by_person.items()):
+                print(f"    • {p}: {info['qty']}件 / {len(info['records'])}笔")
+        headers = ["借出单号", "编号", "玩具名称", "借用人", "未还数", "借出日", "到期日", "逾期天数"]
         print_table(headers, overdue_items)
-        print(f"合计: {len(overdue_items)} 件逾期")
         return
 
     if args.all:
-        print("\n📋 全面盘点 - 所有在库物品")
-        total = 0
-        headers = ["编号", "名称", "分类", "库位", "货架", "数量", "状态", "状况"]
+        print("\n📋 全面盘点 - 细分数量口径")
+        ta = tb = tr = ts = 0
+        headers = ["编号", "名称", "分类", "库位", "总库存", "在库", "借出", "维修", "报废", "状态"]
         rows = []
-        for code, item in items.items():
-            rows.append([code, item["name"], item["category"], item["location"], item["shelf"], item["quantity"], item["status"], item["condition"]])
-            total += item["quantity"]
+        for code, item in sorted(items.items()):
+            qa = item.get("qty_available", 0)
+            qb = item.get("qty_borrowed", 0)
+            qr = item.get("qty_repair", 0)
+            qs = item.get("qty_scrapped", 0)
+            qt = item.get("qty_total", 0)
+            rows.append([code, item["name"], item["category"], item["location"], qt, qa, qb, qr, qs, item["status"]])
+            ta += qa; tb += qb; tr += qr; ts += qs
         print_table(headers, rows)
-        print(f"\n合计: {len(rows)} 个品种, 总数量 {total} 件")
+        print(f"\n合计: {len(rows)}个品种  在库{ta}  借出{tb}  维修{tr}  报废{ts}")
         return
 
     if args.location:
@@ -508,38 +1070,81 @@ def cmd_check(args):
             print(f"❌ 库位 {loc} 不存在")
             return
         loc_items = []
-        loc_qty = 0
-        headers = ["编号", "名称", "分类", "货架", "数量", "状态"]
+        la = lb = lr = ls = 0
+        headers = ["编号", "名称", "分类", "货架", "在库", "借出", "维修", "报废", "口径"]
         for code, item in items.items():
             if item["location"] == loc:
-                loc_items.append([code, item["name"], item["category"], item["shelf"], item["quantity"], item["status"]])
-                loc_qty += item["quantity"]
+                qa = item.get("qty_available", 0)
+                qb = item.get("qty_borrowed", 0)
+                qr = item.get("qty_repair", 0)
+                qs = item.get("qty_scrapped", 0)
+                loc_items.append([code, item["name"], item["category"], item["shelf"], qa, qb, qr, qs, short_status_text(item)])
+                la += qa; lb += qb; lr += qr; ls += qs
         print(f"\n📦 按库位盘点: {loc} - {cfg['locations'][loc]['description']}")
         print(f"   货架: {', '.join(cfg['locations'][loc]['shelves'])}  容量: {cfg['locations'][loc]['capacity']}")
         print_table(headers, loc_items)
-        print(f"合计: {len(loc_items)} 个品种, 数量 {loc_qty} 件")
+        print(f"合计: {len(loc_items)}个品种  在库{la}  借出{lb}  维修{lr}  报废{ls}")
         return
 
     if args.borrowed:
-        borrowed = []
-        for code, item in items.items():
-            if item["status"] == "借出":
-                borrowed.append([code, item["name"], item["category"], item["borrower"], item["borrow_date"], item["due_date"]])
-        print("\n📤 借出中物品清单")
-        headers = ["编号", "名称", "分类", "借出人", "借出日期", "应还日期"]
-        print_table(headers, borrowed)
-        print(f"合计: {len(borrowed)} 件借出中")
+        print("\n📤 借出中明细 (按借用人分组)")
+        by_person = defaultdict(list)
+        total_out = total_rec = 0
+        for rec in borrow_list:
+            if rec["status"] in ("active", "partial", "overdue"):
+                by_person[rec["borrower"]].append(rec)
+                total_out += (rec["qty"] - rec["qty_returned"])
+                total_rec += 1
+        if not by_person:
+            print("(无借出记录)")
+            return
+        print(f"  共 {len(by_person)} 位借用人, {total_rec} 笔借出单, 合计 {total_out} 件在外")
+
+        for person in sorted(by_person.keys()):
+            recs = by_person[person]
+            pq = sum(r["qty"] - r["qty_returned"] for r in recs)
+            print(f"\n  👤 {person}  ({len(recs)}笔, 未还{pq}件)")
+            headers = ["借出单号", "编号", "玩具名称", "借出", "已还", "未还", "借出日", "到期日", "续借", "状态"]
+            rows = [[r["id"], r["code"], r["toy_name"], r["qty"], r["qty_returned"],
+                     r["qty"] - r["qty_returned"], r["borrow_date"], r["due_date"],
+                     r.get("renew_count", 0), r["status"]] for r in recs]
+            print_table(headers, rows)
         return
 
-    print("请指定盘点方式: --location 库位 / --all 全部 / --borrowed 借出 / --overdue 逾期")
+    if args.borrower:
+        person = args.borrower
+        recs = [r for r in borrow_list if r["borrower"] == person and r["status"] != "closed"]
+        if not recs:
+            print(f"❌ 未找到 {person} 的未结清借出记录")
+            return
+        print(f"\n📤 {person} 的未结清借出:")
+        headers = ["借出单号", "编号", "玩具名称", "借出", "已还", "未还", "借出日", "到期日", "状态"]
+        rows = [[r["id"], r["code"], r["toy_name"], r["qty"], r["qty_returned"],
+                 r["qty"] - r["qty_returned"], r["borrow_date"], r["due_date"], r["status"]] for r in recs]
+        print_table(headers, rows)
+        return
+
+    print("请指定盘点方式:")
+    print("  --location <库位>   按库位盘点")
+    print("  --all               全部盘点(细分数量)")
+    print("  --borrowed          借出中(按借用人分组)")
+    print("  --borrower <姓名>   指定借用人明细")
+    print("  --overdue           逾期未还清单")
+    print("\n盘点会话 (check count-*):")
+    print("  count-start [--location X]  开启会话")
+    print("  count-scan  <编号数量...>   录入实盘")
+    print("  count-diff                  查看差异")
+    print("  count-close [--apply]       结束并可选调账")
+    print("  count-list                  历史会话")
 
 
 # ==================== report 命令 ====================
 
 def cmd_report(args):
-    """生成差异清单 / 库龄分析 / 分类统计"""
     inv = get_inventory()
     items = inv["items"]
+    borrow_db = get_borrow_records()
+    borrow_list = borrow_db["records"]
 
     if args.type == "diff":
         expected_codes = set()
@@ -553,67 +1158,63 @@ def cmd_report(args):
                             if "编号" in k or "code" in k.lower():
                                 if v.strip():
                                     expected_codes.add(v.strip())
-        
+
         actual_codes = set(items.keys())
         extra = actual_codes - expected_codes
         missing = expected_codes - actual_codes
-        
-        print("\n🔍 盘点差异清单")
+        print("\n🔍 盘点差异清单 (账面对比)")
         print(f"  台账应有: {len(expected_codes)} 个品种")
-        print(f"  实际盘点: {len(actual_codes)} 个品种")
-        
+        print(f"  实际存在: {len(actual_codes)} 个品种")
         if missing:
             print(f"\n❌ 缺少 (台账有但库中无): {len(missing)} 件")
-            headers = ["编号", "台账状态"]
-            rows = [[c, "缺失"] for c in sorted(missing)]
-            print_table(headers, rows)
-        
+            print_table(["编号", "台账状态"], [[c, "缺失"] for c in sorted(missing)])
         if extra:
             print(f"\n⚠ 多余 (库中有但台账无): {len(extra)} 件")
-            headers = ["编号", "名称", "库位", "数量"]
-            rows = [[c, items[c]["name"], items[c]["location"], items[c]["quantity"]] for c in sorted(extra)]
-            print_table(headers, rows)
-        
+            rows = [[c, items[c]["name"], items[c]["location"], short_status_text(items[c])] for c in sorted(extra)]
+            print_table(["编号", "名称", "库位", "细分数量"], rows)
         if not missing and not extra and expected_codes:
             print("\n✅ 账实相符，无差异！")
         return
 
     if args.type == "age":
         today = datetime.now().date()
-        age_buckets = {"0-30天": [], "31-90天": [], "91-180天": [], "181-365天": [], "365天以上": []}
+        buckets = {"0-30天": [], "31-90天": [], "91-180天": [], "181-365天": [], "365天以上": []}
         for code, item in items.items():
-            if item["inbound_date"] and item["status"] == "在库":
-                try:
-                    in_date = datetime.strptime(item["inbound_date"], "%Y-%m-%d").date()
-                    days = (today - in_date).days
-                    entry = [code, item["name"], item["category"], item["inbound_date"], f"{days}天", item["quantity"]]
-                    if days <= 30:
-                        age_buckets["0-30天"].append(entry)
-                    elif days <= 90:
-                        age_buckets["31-90天"].append(entry)
-                    elif days <= 180:
-                        age_buckets["91-180天"].append(entry)
-                    elif days <= 365:
-                        age_buckets["181-365天"].append(entry)
-                    else:
-                        age_buckets["365天以上"].append(entry)
-                except ValueError:
+            if not item["inbound_date"]:
+                continue
+            try:
+                in_date = datetime.strptime(item["inbound_date"], "%Y-%m-%d").date()
+                days = (today - in_date).days
+                qa = item.get("qty_available", 0)
+                qb = item.get("qty_borrowed", 0)
+                qr = item.get("qty_repair", 0)
+                total = qa + qb + qr
+                if total <= 0:
                     continue
-        
-        print("\n📊 库龄分析报告")
-        headers = ["库龄区间", "品种数", "总数量"]
-        summary_rows = []
-        for bucket in ["0-30天", "31-90天", "91-180天", "181-365天", "365天以上"]:
-            entries = age_buckets[bucket]
-            total_qty = sum(e[5] for e in entries)
-            summary_rows.append([bucket, len(entries), total_qty])
-        print_table(headers, summary_rows)
+                entry = [code, item["name"], item["category"], item["inbound_date"], f"{days}天", qa, qb, qr, total]
+                if days <= 30: buckets["0-30天"].append(entry)
+                elif days <= 90: buckets["31-90天"].append(entry)
+                elif days <= 180: buckets["91-180天"].append(entry)
+                elif days <= 365: buckets["181-365天"].append(entry)
+                else: buckets["365天以上"].append(entry)
+            except ValueError:
+                continue
 
+        print("\n📊 库龄分析报告")
+        headers = ["库龄区间", "品种数", "在库数", "借出数", "维修数", "总件数"]
+        rows = []
+        for b in ["0-30天", "31-90天", "91-180天", "181-365天", "365天以上"]:
+            es = buckets[b]
+            rows.append([b, len(es), sum(e[5] for e in es), sum(e[6] for e in es),
+                        sum(e[7] for e in es), sum(e[8] for e in es)])
+        print_table(headers, rows)
         if args.detail:
-            for bucket in ["365天以上", "181-365天"]:
-                if age_buckets[bucket]:
-                    print(f"\n📌 {bucket} 明细 (呆滞库存建议关注):")
-                    print_table(["编号", "名称", "分类", "入库日期", "库龄", "数量"], age_buckets[bucket][:args.detail])
+            for b in ["365天以上", "181-365天"]:
+                if buckets[b]:
+                    print(f"\n📌 {b} 明细 (呆滞库存建议关注):")
+                    print_table(["编号", "名称", "分类", "入库日期", "库龄", "在库", "借出", "维修", "总数"],
+                                [[e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8]]
+                                 for e in buckets[b][:args.detail]])
         return
 
     if args.type == "category":
@@ -621,27 +1222,32 @@ def cmd_report(args):
         for code, item in items.items():
             cat = item["category"]
             if cat not in cat_stats:
-                cat_stats[cat] = {"count": 0, "qty": 0, "value": 0, "on_shelf": 0, "borrowed": 0, "scrapped": 0}
-            cat_stats[cat]["count"] += 1
-            cat_stats[cat]["qty"] += item["quantity"]
-            cat_stats[cat]["value"] += item["quantity"] * item["price"]
-            if item["status"] == "在库":
-                cat_stats[cat]["on_shelf"] += item["quantity"]
-            elif item["status"] == "借出":
-                cat_stats[cat]["borrowed"] += item["quantity"]
-            elif item["status"] == "报废":
-                cat_stats[cat]["scrapped"] += item["quantity"]
-        
-        print("\n📊 分类统计报告")
-        headers = ["分类", "品种数", "总数量", "在库", "借出", "报废", "库存金额"]
+                cat_stats[cat] = {"types": 0, "total": 0, "available": 0, "borrowed": 0,
+                                  "repair": 0, "scrapped": 0, "value": 0.0}
+            s = cat_stats[cat]
+            qa = item.get("qty_available", 0)
+            qb = item.get("qty_borrowed", 0)
+            qr = item.get("qty_repair", 0)
+            qs = item.get("qty_scrapped", 0)
+            s["types"] += 1
+            s["available"] += qa
+            s["borrowed"] += qb
+            s["repair"] += qr
+            s["scrapped"] += qs
+            s["total"] += item.get("qty_total", 0)
+            s["value"] += qa * item["price"]
+
+        print("\n📊 分类统计报告 (⚠ 安全库存按 在库可用数 判断, 借出/维修不算可用)")
+        headers = ["分类", "品种数", "总库存", "可用(在库)", "借出", "维修", "报废", "可用库存金额"]
         rows = []
-        total = {"count": 0, "qty": 0, "value": 0, "on_shelf": 0, "borrowed": 0, "scrapped": 0}
+        total = {"types": 0, "total": 0, "available": 0, "borrowed": 0, "repair": 0, "scrapped": 0, "value": 0.0}
         for cat in sorted(cat_stats.keys()):
             s = cat_stats[cat]
-            rows.append([cat, s["count"], s["qty"], s["on_shelf"], s["borrowed"], s["scrapped"], f"¥{s['value']:.2f}"])
-            for k in total:
-                total[k] += s[k]
-        rows.append(["合计", total["count"], total["qty"], total["on_shelf"], total["borrowed"], total["scrapped"], f"¥{total['value']:.2f}"])
+            rows.append([cat, s["types"], s["total"], s["available"], s["borrowed"], s["repair"],
+                         s["scrapped"], f"¥{s['value']:.2f}"])
+            for k in total: total[k] += s[k]
+        rows.append(["合计", total["types"], total["total"], total["available"], total["borrowed"],
+                     total["repair"], total["scrapped"], f"¥{total['value']:.2f}"])
         print_table(headers, rows)
 
         cfg = get_config()
@@ -649,11 +1255,30 @@ def cmd_report(args):
         low_stock = []
         for cat in cat_stats:
             threshold = ss.get(cat, ss.get("_default", 0))
-            if threshold and cat_stats[cat]["on_shelf"] < threshold:
-                low_stock.append([cat, cat_stats[cat]["on_shelf"], threshold, "⚠ 低于安全库存"])
+            if threshold and cat_stats[cat]["available"] < threshold:
+                low_stock.append([cat, cat_stats[cat]["available"], threshold,
+                                  f"缺{threshold - cat_stats[cat]['available']}件"])
         if low_stock:
-            print("\n🚨 安全库存预警:")
-            print_table(["分类", "当前在库", "安全阈值", "状态"], low_stock)
+            print("\n🚨 安全库存预警 (按可用在库数比较):")
+            print_table(["分类", "当前可用", "安全阈值", "缺口"], low_stock)
+        else:
+            print("\n✅ 所有分类的在库可用数均达到安全库存")
+        return
+
+    if args.type == "borrow":
+        print("\n📒 借出明细台账")
+        sf = args.status or "all"
+        filtered = [r for r in borrow_list if sf == "all" or r["status"] == sf]
+        if args.borrower:
+            filtered = [r for r in filtered if r["borrower"] == args.borrower]
+        print(f"  条件: 状态={sf}, 借用人={args.borrower or '全部'}, 共{len(filtered)}条")
+        headers = ["借出单号", "编号", "玩具名称", "借出人", "借出", "已还", "未还", "借出日", "到期日", "续借", "状态"]
+        rows = []
+        for r in filtered:
+            rows.append([r["id"], r["code"], r["toy_name"], r["borrower"],
+                         r["qty"], r["qty_returned"], r["qty"] - r["qty_returned"],
+                         r["borrow_date"], r["due_date"], r.get("renew_count", 0), r["status"]])
+        print_table(headers, rows)
         return
 
     if args.type == "logs":
@@ -663,35 +1288,33 @@ def cmd_report(args):
             records = records[-args.limit:]
         print(f"\n📝 操作日志 (最近 {len(records)} 条)")
         headers = ["时间", "操作人", "操作", "详情"]
-        rows = [[r["timestamp"], r["operator"], r["action"], (r["detail"][:50] + "...") if len(r["detail"]) > 50 else r["detail"]] for r in records]
+        rows = [[r["timestamp"], r["operator"], r["action"],
+                 (r["detail"][:60] + "...") if len(r["detail"]) > 60 else r["detail"]] for r in records]
         print_table(headers, rows)
         return
 
-    print("请指定报告类型: diff / age / category / logs")
+    print("请指定报告类型: diff / age / category / borrow / logs")
 
 
 # ==================== label 命令 ====================
 
 def cmd_label(args):
-    """打印标签 / 设置安全库存"""
     cfg = get_config()
     inv = get_inventory()
     items = inv["items"]
 
     if args.safety:
         category = args.category or "_default"
+        if args.list:
+            print("\n🛡 当前安全库存设置 (按 在库可用数 预警):")
+            print_table(["分类", "安全阈值"], [[k, v] for k, v in cfg.get("safety_stock", {}).items()])
+            return
         threshold = args.threshold or 0
         if "safety_stock" not in cfg:
             cfg["safety_stock"] = {}
-        if args.list:
-            print("\n🛡 当前安全库存设置:")
-            headers = ["分类", "安全阈值"]
-            rows = [[k, v] for k, v in cfg["safety_stock"].items()]
-            print_table(headers, rows)
-            return
         cfg["safety_stock"][category] = threshold
         save_config(cfg)
-        log_action("SAFETY-STOCK", f"设置 {category} 安全库存阈值为 {threshold}")
+        log_action("SAFETY-STOCK", f"设置 {category} 安全库存阈值={threshold}")
         print(f"✅ 已设置分类【{category}】安全库存阈值为 {threshold}")
         return
 
@@ -711,60 +1334,58 @@ def cmd_label(args):
     if not codes and not args.all:
         print("❌ 请指定打印标签的编号 (--codes) 或 --all")
         return
-    
     if args.all:
         codes = list(items.keys())
-    
+
     labels = []
     for code in codes:
         if code in items:
             it = items[code]
             labels.append({
-                "code": it["code"],
-                "name": it["name"],
-                "category": it["category"],
-                "location": f"{it['location']}/{it['shelf']}",
-                "price": it["price"]
+                "code": it["code"], "name": it["name"], "category": it["category"],
+                "location": f"{it['location']}/{it['shelf']}", "price": it["price"],
+                "qty_avail": it.get("qty_available", 0)
             })
         else:
-            labels.append({"code": code, "name": "未登记", "category": "-", "location": "-", "price": 0})
+            labels.append({"code": code, "name": "未登记", "category": "-", "location": "-", "price": 0, "qty_avail": 0})
 
     labels_text = ""
     per_row = args.cols or 2
-    width = 38
-    
+    width = 40
     for i, lab in enumerate(labels):
-        border = "+" + "-" * (width - 2) + "+"
-        line1 = f"| 【{lab['code']}】" + " " * (width - len(lab['code']) - 8) + "|"
-        line2 = f"| 名称: {lab['name'][:20]}" + " " * max(0, width - len(lab['name']) - 10) + "|"
-        line3 = f"| 分类: {lab['category'][:18]}" + " " * max(0, width - len(lab['category']) - 8) + "|"
-        line4 = f"| 库位: {lab['location'][:18]}" + " " * max(0, width - len(lab['location']) - 8) + "|"
-        line5 = f"| 价格: ¥{lab['price']:.2f}" + " " * (width - 15) + "|"
-        block = "\n".join([border, line1, line2, line3, line4, line5, border])
-        labels_text += block + "\n"
-        
+        b = "+" + "-" * (width - 2) + "+"
+        lines = [
+            b,
+            f"| 【{lab['code']}】" + " " * (width - len(lab['code']) - 8) + "|",
+            f"| 名称: {lab['name'][:22]}" + " " * max(0, width - len(lab['name']) - 10) + "|",
+            f"| 分类: {lab['category'][:18]}" + " " * max(0, width - len(lab['category']) - 8) + "|",
+            f"| 库位: {lab['location'][:18]}" + " " * max(0, width - len(lab['location']) - 8) + "|",
+            f"| 价格: ¥{lab['price']:.2f}   在库: {lab['qty_avail']}" + " " * max(0, width - 25 - len(str(lab['qty_avail']))) + "|",
+            b
+        ]
+        labels_text += "\n".join(lines) + "\n"
         if (i + 1) % per_row == 0:
             labels_text += "\n"
 
     output_file = args.output or "labels.txt"
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(labels_text)
-    
     log_action("LABEL", f"生成标签 {len(labels)} 张 -> {output_file}")
-    print(f"🏷 已生成 {len(labels)} 张标签，保存至: {output_file}")
-    print("\n标签预览 (前3张):")
-    preview_lines = labels_text.split("\n")[:7 * min(3, per_row) * 2]
-    print("\n".join(preview_lines))
+    print(f"🏷 已生成 {len(labels)} 张标签 -> {output_file}")
+    print("\n标签预览 (前2张):")
+    preview = labels_text.split("\n")[:7 * min(2, per_row) * 2]
+    print("\n".join(preview))
 
 
 # ==================== export 命令 ====================
 
 def cmd_export(args):
-    """导出盘点表给负责人"""
     cfg = get_config()
     inv = get_inventory()
     items = inv["items"]
     logs = get_logs()
+    borrow_db = get_borrow_records()
+    borrow_list = borrow_db["records"]
 
     fmt = args.format.lower()
     output = args.output or f"inventory_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -773,9 +1394,12 @@ def cmd_export(args):
         csv_file = output + ".csv"
         with open(csv_file, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["编号", "名称", "分类", "品牌", "适用年龄", "库位", "货架",
-                            "数量", "单价", "状态", "状况", "借出人", "借出日期", "应还日期",
-                            "入库日期", "库龄(天)", "备注"])
+            writer.writerow([
+                "编号", "名称", "分类", "品牌", "适用年龄",
+                "库位", "货架", "单价",
+                "总库存", "在库可用", "借出中", "维修中", "已报废",
+                "入库日期", "库龄(天)", "状况", "状态", "备注"
+            ])
             today = datetime.now().date()
             for code, it in sorted(items.items()):
                 age_days = ""
@@ -786,122 +1410,205 @@ def cmd_export(args):
                         pass
                 writer.writerow([
                     it["code"], it["name"], it["category"], it["brand"], it["age_range"],
-                    it["location"], it["shelf"], it["quantity"], it["price"],
-                    it["status"], it["condition"], it["borrower"], it["borrow_date"],
-                    it["due_date"], it["inbound_date"], age_days, it["remarks"]
+                    it["location"], it["shelf"], it["price"],
+                    it.get("qty_total", 0), it.get("qty_available", 0),
+                    it.get("qty_borrowed", 0), it.get("qty_repair", 0), it.get("qty_scrapped", 0),
+                    it["inbound_date"], age_days, it.get("condition", ""),
+                    it.get("status", ""), it.get("remarks", "")
                 ])
-        print(f"📄 CSV盘点表已导出: {csv_file}")
+        # 额外导出借出明细台账CSV
+        borrow_csv = output + "_borrows.csv"
+        with open(borrow_csv, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "借出单号", "玩具编号", "玩具名称", "借出人",
+                "借出数量", "已还数量", "未还数量",
+                "借出日期", "应还日期", "原始应还", "续借次数", "状态", "操作人"
+            ])
+            for r in borrow_list:
+                writer.writerow([
+                    r["id"], r["code"], r["toy_name"], r["borrower"],
+                    r["qty"], r["qty_returned"], r["qty"] - r["qty_returned"],
+                    r["borrow_date"], r["due_date"], r.get("original_due", ""),
+                    r.get("renew_count", 0), r["status"], r.get("operator", "")
+                ])
+        print(f"📄 CSV盘点表 -> {csv_file}")
+        print(f"📄 CSV借出台账 -> {borrow_csv}")
 
     if fmt == "json" or fmt == "all":
         json_file = output + ".json"
-        report = {
-            "generated_at": now_str(),
-            "summary": {
-                "total_types": len(items),
-                "total_qty": sum(it["quantity"] for it in items.values()),
-                "on_shelf_qty": sum(it["quantity"] for it in items.values() if it["status"] == "在库"),
-                "borrowed_qty": sum(1 for it in items.values() if it["status"] == "借出"),
-                "scrapped_qty": sum(1 for it in items.values() if it["status"] == "报废"),
-                "total_locations": len(cfg["locations"]),
-                "total_ops": len(logs["records"])
-            },
-            "items": list(items.values()),
-            "locations": cfg["locations"],
-            "safety_stock": cfg.get("safety_stock", {}),
-            "safety_alerts": []
-        }
-        
+        total_types = len(items)
+        total_avail = sum(it.get("qty_available", 0) for it in items.values())
+        total_borrowed = sum(it.get("qty_borrowed", 0) for it in items.values())
+        total_repair = sum(it.get("qty_repair", 0) for it in items.values())
+        total_scrapped = sum(it.get("qty_scrapped", 0) for it in items.values())
+        total_onhand_value = sum(it.get("qty_available", 0) * it["price"] for it in items.values())
+
         cat_stats = {}
         for it in items.values():
             cat = it["category"]
             if cat not in cat_stats:
-                cat_stats[cat] = 0
-            if it["status"] == "在库":
-                cat_stats[cat] += it["quantity"]
+                cat_stats[cat] = {"types": 0, "available": 0, "borrowed": 0, "repair": 0}
+            cat_stats[cat]["types"] += 1
+            cat_stats[cat]["available"] += it.get("qty_available", 0)
+            cat_stats[cat]["borrowed"] += it.get("qty_borrowed", 0)
+            cat_stats[cat]["repair"] += it.get("qty_repair", 0)
+
         ss = cfg.get("safety_stock", {})
-        for cat, qty in cat_stats.items():
+        safety_alerts = []
+        for cat, stat in cat_stats.items():
             threshold = ss.get(cat, ss.get("_default", 0))
-            if threshold and qty < threshold:
-                report["safety_alerts"].append({"category": cat, "current": qty, "threshold": threshold})
+            if threshold and stat["available"] < threshold:
+                safety_alerts.append({
+                    "category": cat, "available": stat["available"],
+                    "threshold": threshold, "gap": threshold - stat["available"]
+                })
+
+        today = datetime.now().date()
+        overdue_list = []
+        for r in borrow_list:
+            if r["status"] not in ("active", "partial", "overdue") or not r["due_date"]:
+                continue
+            try:
+                due = datetime.strptime(r["due_date"], "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if today > due:
+                overdue_list.append({
+                    "id": r["id"], "code": r["code"], "toy_name": r["toy_name"],
+                    "borrower": r["borrower"], "outstanding": r["qty"] - r["qty_returned"],
+                    "borrow_date": r["borrow_date"], "due_date": r["due_date"],
+                    "overdue_days": (today - due).days
+                })
+
+        report = {
+            "generated_at": now_str(),
+            "operator": cfg.get("operator", "system"),
+            "summary": {
+                "total_types": total_types,
+                "qty_available_total": total_avail,
+                "qty_borrowed_total": total_borrowed,
+                "qty_repair_total": total_repair,
+                "qty_scrapped_total": total_scrapped,
+                "onhand_inventory_value": round(total_onhand_value, 2),
+                "total_locations": len(cfg["locations"]),
+                "total_operations": len(logs["records"]),
+                "active_borrow_records": sum(1 for r in borrow_list if r["status"] != "closed"),
+                "overdue_count": len(overdue_list)
+            },
+            "safety_stock": cfg.get("safety_stock", {}),
+            "safety_alerts": safety_alerts,
+            "overdue_items": overdue_list,
+            "category_stats": cat_stats,
+            "items": list(items.values()),
+            "locations": cfg["locations"],
+            "borrow_records": borrow_list
+        }
         with open(json_file, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
-        print(f"📄 JSON完整报告已导出: {json_file}")
+        print(f"📄 JSON完整报告 -> {json_file}")
 
     if fmt == "txt" or fmt == "all":
         txt_file = output + ".txt"
         today = datetime.now()
+        today_d = today.date()
         total_types = len(items)
-        total_qty = sum(it["quantity"] for it in items.values())
-        on_shelf = sum(it["quantity"] for it in items.values() if it["status"] == "在库")
-        borrowed = sum(1 for it in items.values() if it["status"] == "借出")
-        scrapped = sum(1 for it in items.values() if it["status"] == "报废")
-        to_repair = sum(1 for it in items.values() if it["status"] == "待维修")
-        
+        total_avail = sum(it.get("qty_available", 0) for it in items.values())
+        total_borrowed = sum(it.get("qty_borrowed", 0) for it in items.values())
+        total_repair = sum(it.get("qty_repair", 0) for it in items.values())
+        total_scrapped = sum(it.get("qty_scrapped", 0) for it in items.values())
+        total_qt = sum(it.get("qty_total", 0) for it in items.values())
+
         cat_stats = {}
         for it in items.values():
             cat = it["category"]
             if cat not in cat_stats:
-                cat_stats[cat] = {"types": 0, "qty": 0}
-            cat_stats[cat]["types"] += 1
-            cat_stats[cat]["qty"] += it["quantity"]
-        
+                cat_stats[cat] = {"types": 0, "available": 0, "borrowed": 0, "repair": 0, "scrapped": 0}
+            s = cat_stats[cat]
+            s["types"] += 1
+            s["available"] += it.get("qty_available", 0)
+            s["borrowed"] += it.get("qty_borrowed", 0)
+            s["repair"] += it.get("qty_repair", 0)
+            s["scrapped"] += it.get("qty_scrapped", 0)
+
         overdue_list = []
-        today_d = today.date()
-        for code, it in items.items():
-            if it["status"] == "借出" and it["due_date"]:
-                try:
-                    due = datetime.strptime(it["due_date"], "%Y-%m-%d").date()
-                    if today_d > due:
-                        overdue_list.append((code, it["name"], it["borrower"], (today_d - due).days))
-                except ValueError:
-                    pass
+        for r in borrow_list:
+            if r["status"] not in ("active", "partial", "overdue") or not r["due_date"]:
+                continue
+            try:
+                due = datetime.strptime(r["due_date"], "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if today_d > due:
+                overdue_list.append((r["code"], r["toy_name"], r["borrower"], r["qty"] - r["qty_returned"], (today_d - due).days))
+
+        ss = cfg.get("safety_stock", {})
+        low_stock = []
+        for cat, stat in cat_stats.items():
+            threshold = ss.get(cat, ss.get("_default", 0))
+            if threshold and stat["available"] < threshold:
+                low_stock.append((cat, stat["available"], threshold))
 
         with open(txt_file, "w", encoding="utf-8") as f:
-            f.write("=" * 60 + "\n")
-            f.write("         玩具仓库盘点报告\n")
+            f.write("=" * 64 + "\n")
+            f.write("         玩具仓库盘点报告 (V2 细分数量口径)\n")
             f.write(f"    生成时间: {now_str()}\n")
             f.write(f"    操作人:   {cfg.get('operator', 'system')}\n")
-            f.write("=" * 60 + "\n\n")
-            
+            f.write("=" * 64 + "\n\n")
+
             f.write("【一、总体概况】\n")
             f.write(f"  品种总数: {total_types}\n")
-            f.write(f"  数量合计: {total_qty}\n")
-            f.write(f"  在库数量: {on_shelf}\n")
-            f.write(f"  借出数量: {borrowed}\n")
-            f.write(f"  待维修:   {to_repair}\n")
-            f.write(f"  已报废:   {scrapped}\n")
-            f.write(f"  库位总数: {len(cfg['locations'])}\n")
-            f.write(f"  累计操作: {len(logs['records'])} 次\n\n")
-            
-            f.write("【二、分类统计】\n")
+            f.write(f"  总库存(扣已报废): {total_qt}\n")
+            f.write(f"  ├─ 在库可用: {total_avail}\n")
+            f.write(f"  ├─ 借出在外: {total_borrowed}\n")
+            f.write(f"  ├─ 维修中:   {total_repair}\n")
+            f.write(f"  └─ 已报废:   {total_scrapped}\n")
+            f.write(f"  库位总数: {len(cfg['locations'])}  累计操作: {len(logs['records'])} 次\n\n")
+
+            f.write("【二、分类统计 (可用库存仅计在库, 借出/维修不算)】\n")
+            f.write(f"  {'分类':<10}{'品种':>5}{'可用':>6}{'借出':>6}{'维修':>6}{'报废':>6}\n")
+            f.write("  " + "-" * 48 + "\n")
             for cat in sorted(cat_stats.keys()):
                 s = cat_stats[cat]
-                f.write(f"  {cat}: {s['types']}个品种, {s['qty']}件\n")
+                f.write(f"  {cat:<10}{s['types']:>5}{s['available']:>6}{s['borrowed']:>6}{s['repair']:>6}{s['scrapped']:>6}\n")
+            if low_stock:
+                f.write("\n  ⚠ 安全库存预警 (按可用在库数):\n")
+                for cat, av, th in low_stock:
+                    f.write(f"    • {cat}: 当前{av}, 阈值{th}, 缺{th-av}件\n")
             f.write("\n")
-            
+
             if overdue_list:
                 f.write("【三、逾期未还预警】\n")
-                for code, name, borrower, days in overdue_list:
-                    f.write(f"  ⚠ [{code}] {name} - {borrower} 逾期{days}天\n")
+                by_p = defaultdict(int)
+                for _, _, p, qty, _ in overdue_list:
+                    by_p[p] += qty
+                for p, q in sorted(by_p.items()):
+                    f.write(f"  ⚠ {p}: 逾期共{q}件\n")
+                f.write("\n  明细:\n")
+                for code, name, p, qty, days in overdue_list:
+                    f.write(f"    [{code}] {name} | {p} | 未还{qty}件 | 逾期{days}天\n")
                 f.write("\n")
-            
+
             f.write("【四、库位明细盘点】\n")
             for loc_code in sorted(cfg["locations"].keys()):
                 loc = cfg["locations"][loc_code]
                 loc_items = [(c, it) for c, it in items.items() if it["location"] == loc_code]
-                loc_qty = sum(it["quantity"] for _, it in loc_items)
-                f.write(f"\n  ▶ {loc_code} ({loc['description']}) - 共{len(loc_items)}个品种, {loc_qty}件\n")
+                la = sum(it.get("qty_available", 0) for _, it in loc_items)
+                lb = sum(it.get("qty_borrowed", 0) for _, it in loc_items)
+                lr = sum(it.get("qty_repair", 0) for _, it in loc_items)
+                f.write(f"\n  ▶ {loc_code} ({loc['description']})  {len(loc_items)}个品种  在库{la}/借出{lb}/维修{lr}\n")
                 for code, it in loc_items:
-                    f.write(f"      {code} | {it['name']} | {it['shelf']} | ×{it['quantity']} | {it['status']}\n")
-            
-            f.write("\n" + "=" * 60 + "\n")
-            f.write("              报告结束\n")
-            f.write("=" * 60 + "\n")
-        
-        print(f"📄 TXT盘点报告已导出: {txt_file}")
-    
-    log_action("EXPORT", f"导出盘点报告, 格式={fmt}, 输出前缀={output}")
-    print(f"\n✅ 导出完成！请将报告发送给负责人审阅。")
+                    sts = short_status_text(it)
+                    f.write(f"      {code} | {it['name'][:16]} | {it['shelf']} | {sts}\n")
+
+            f.write("\n" + "=" * 64 + "\n")
+            f.write("              报告结束  —  请负责人审阅\n")
+            f.write("=" * 64 + "\n")
+
+        print(f"📄 TXT盘点报告 -> {txt_file}")
+
+    log_action("EXPORT", f"导出盘点报告, 格式={fmt}, 前缀={output}")
+    print(f"\n✅ 导出完成！请将报告文件发送给负责人审阅。")
 
 
 # ==================== 主入口 ====================
@@ -909,120 +1616,170 @@ def cmd_export(args):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="toy-inventory",
-        description="🏫 玩具仓库盘点命令行工具 - 幼儿园/玩具租赁仓专用",
+        description="🏫 玩具仓库盘点命令行工具 V2 - 幼儿园/玩具租赁仓专用 (细分数量口径+借出台账+盘点会话)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 命令速查:
   init     初始化仓库库位结构
   import   导入玩具台账 (CSV/JSON)
-  scan     扫码登记: 入库/借出/归还/报废
+  scan     扫码登记: inbound入库/borrow借出/return归还/renew续借/scrap报废
   move     库位调拨 (单件/整库)
-  check    按箱盘点 / 逾期提醒
-  report   差异清单 / 库龄 / 分类统计 / 日志
-  label    打印标签 / 安全库存设置
-  export   导出盘点表 (CSV/JSON/TXT)
+  check    盘点检查 / 盘点会话管理
+  report   统计报告: diff/age/category/borrow/logs
+  label    打印标签 / 安全库存 / 操作人
+  export   导出盘点表 (CSV+借出台账/JSON/TXT)
+
+盘点会话:
+  check count-start   开启盘点会话(保存账面快照)
+  check count-scan    录入实盘数量(支持交互或命令行)
+  check count-diff    查看账面vs实盘差异
+  check count-close   结束会话 [--apply 一键调账]
+  check count-list    历史会话列表
+  check count-abort   放弃当前会话
         """
     )
     subparsers = parser.add_subparsers(dest="command", required=True, help="可用命令")
 
     # init
     p_init = subparsers.add_parser("init", help="初始化仓库库位")
-    p_init.add_argument("--rows", type=int, help="库位区域行数")
-    p_init.add_argument("--cols", type=int, help="库位区域列数")
-    p_init.add_argument("--shelves", type=int, help="每区货架层数")
-    p_init.add_argument("--capacity", type=int, help="每区容量")
-    p_init.add_argument("--overdue-days", type=int, help="逾期阈值天数")
-    p_init.add_argument("--force", action="store_true", help="强制重新初始化")
+    p_init.add_argument("--rows", type=int)
+    p_init.add_argument("--cols", type=int)
+    p_init.add_argument("--shelves", type=int)
+    p_init.add_argument("--capacity", type=int)
+    p_init.add_argument("--overdue-days", type=int)
+    p_init.add_argument("--force", action="store_true")
+    p_init.add_argument("--yes", action="store_true")
     p_init.set_defaults(func=cmd_init)
 
     # import
     p_imp = subparsers.add_parser("import", help="导入玩具台账")
-    p_imp.add_argument("file", help="CSV 或 JSON 文件路径")
-    p_imp.add_argument("--default-location", help="默认库位编号")
-    p_imp.add_argument("--update", action="store_true", help="更新已存在的记录")
+    p_imp.add_argument("file")
+    p_imp.add_argument("--default-location")
+    p_imp.add_argument("--update", action="store_true")
     p_imp.set_defaults(func=cmd_import)
 
     # scan
     p_scan = subparsers.add_parser("scan", help="扫码操作")
-    p_scan.add_argument("operation", choices=["inbound", "borrow", "return", "scrap"],
-                        help="操作类型: inbound入库/borrow借出/return归还/scrap报废")
-    p_scan.add_argument("--codes", nargs="+", help="玩具编号列表")
-    p_scan.add_argument("--qty", type=int, default=1, help="操作数量")
-    p_scan.add_argument("--operator", help="操作人")
-    p_scan.add_argument("--location", help="目标库位 (入库时)")
-    p_scan.add_argument("--shelf", help="目标货架 (入库时)")
-    p_scan.add_argument("--name", help="新玩具名称 (入库时)")
-    p_scan.add_argument("--category", help="新玩具分类 (入库时)")
-    p_scan.add_argument("--brand", help="新玩具品牌 (入库时)")
-    p_scan.add_argument("--age", help="适用年龄 (入库时)")
-    p_scan.add_argument("--price", type=float, help="单价 (入库时)")
-    p_scan.add_argument("-b", "--borrower", help="借出人姓名 (借出时)")
-    p_scan.add_argument("--due", help="应还日期 YYYY-MM-DD (借出时)")
-    p_scan.add_argument("--condition", choices=["完好", "轻微破损", "待维修", "破损"], help="归还状况")
-    p_scan.add_argument("--reason", help="报废原因 (报废时)")
+    p_scan.add_argument("operation", choices=["inbound", "borrow", "return", "renew", "scrap"])
+    p_scan.add_argument("--codes", nargs="+")
+    p_scan.add_argument("--qty", type=int, default=1)
+    p_scan.add_argument("--operator")
+    p_scan.add_argument("--location")
+    p_scan.add_argument("--shelf")
+    p_scan.add_argument("--name")
+    p_scan.add_argument("--category")
+    p_scan.add_argument("--brand")
+    p_scan.add_argument("--age")
+    p_scan.add_argument("--price", type=float)
+    p_scan.add_argument("-b", "--borrower")
+    p_scan.add_argument("--due")
+    p_scan.add_argument("--renew-days", type=int)
+    p_scan.add_argument("--condition", choices=["完好", "轻微破损", "待维修", "破损"])
+    p_scan.add_argument("--reason")
+    p_scan.add_argument("--from-repair", action="store_true")
     p_scan.set_defaults(func=cmd_scan)
 
     # move
     p_move = subparsers.add_parser("move", help="库位调拨")
-    p_move.add_argument("--codes", nargs="+", help="玩具编号列表")
-    p_move.add_argument("--all-from", help="整库调拨源库位")
-    p_move.add_argument("--to", required=True, help="目标库位")
-    p_move.add_argument("--shelf", help="目标货架")
-    p_move.add_argument("--operator", help="操作人")
+    p_move.add_argument("--codes", nargs="+")
+    p_move.add_argument("--all-from")
+    p_move.add_argument("--to", required=True)
+    p_move.add_argument("--shelf")
+    p_move.add_argument("--operator")
     p_move.set_defaults(func=cmd_move)
 
     # check
-    p_check = subparsers.add_parser("check", help="盘点检查")
-    p_check.add_argument("--location", help="按库位盘点")
-    p_check.add_argument("--all", action="store_true", help="全部盘点")
-    p_check.add_argument("--borrowed", action="store_true", help="查看借出中")
-    p_check.add_argument("--overdue", action="store_true", help="查看逾期未还")
+    p_check = subparsers.add_parser("check", help="盘点检查/盘点会话")
+    p_check.add_argument("--location")
+    p_check.add_argument("--all", action="store_true")
+    p_check.add_argument("--borrowed", action="store_true")
+    p_check.add_argument("--borrower")
+    p_check.add_argument("--overdue", action="store_true")
+    p_check.add_argument("--yes", action="store_true")
+
+    check_sub = p_check.add_subparsers(dest="count_cmd")
+
+    cs_start = check_sub.add_parser("count-start", help="开启盘点会话")
+    cs_start.add_argument("--location")
+    cs_start.add_argument("--note")
+    cs_start.add_argument("--operator")
+    cs_start.add_argument("--force", action="store_true")
+    cs_start.set_defaults(count_cmd="start", func=cmd_check)
+
+    cs_scan = check_sub.add_parser("count-scan", help="录入实盘数量")
+    cs_scan.add_argument("entries", nargs="*")
+    cs_scan.add_argument("--interactive", action="store_true")
+    cs_scan.set_defaults(count_cmd="scan", func=cmd_check)
+
+    cs_diff = check_sub.add_parser("count-diff", help="查看差异")
+    cs_diff.add_argument("--limit", type=int)
+    cs_diff.set_defaults(count_cmd="diff", func=cmd_check)
+
+    cs_close = check_sub.add_parser("count-close", help="结束会话(可选调账)")
+    cs_close.add_argument("--apply", action="store_true", help="应用差异调整到库存")
+    cs_close.add_argument("--operator")
+    cs_close.set_defaults(count_cmd="close", func=cmd_check)
+
+    cs_list = check_sub.add_parser("count-list", help="历史会话")
+    cs_list.add_argument("--id")
+    cs_list.add_argument("--limit", type=int)
+    cs_list.set_defaults(count_cmd="list", func=cmd_check)
+
+    cs_abort = check_sub.add_parser("count-abort", help="放弃当前会话")
+    cs_abort.add_argument("--yes", action="store_true")
+    cs_abort.set_defaults(count_cmd="abort", func=cmd_check)
+
     p_check.set_defaults(func=cmd_check)
 
     # report
     p_rep = subparsers.add_parser("report", help="统计报告")
-    p_rep.add_argument("type", choices=["diff", "age", "category", "logs"],
-                       help="报告类型: diff差异/age库龄/category分类/logs日志")
-    p_rep.add_argument("--file", help="台账基准文件 (diff时用)")
-    p_rep.add_argument("--detail", type=int, help="库龄明细条数")
-    p_rep.add_argument("--limit", type=int, help="日志条数限制")
+    p_rep.add_argument("type", choices=["diff", "age", "category", "borrow", "logs"])
+    p_rep.add_argument("--file")
+    p_rep.add_argument("--detail", type=int)
+    p_rep.add_argument("--limit", type=int)
+    p_rep.add_argument("--status", choices=["active", "partial", "overdue", "closed", "all"])
+    p_rep.add_argument("--borrower")
     p_rep.set_defaults(func=cmd_report)
 
     # label
     p_lab = subparsers.add_parser("label", help="标签与设置")
-    p_lab.add_argument("--codes", nargs="+", help="要打印标签的编号")
-    p_lab.add_argument("--all", action="store_true", help="打印全部标签")
-    p_lab.add_argument("--cols", type=int, default=2, help="每行排列数")
-    p_lab.add_argument("--output", help="输出文件")
-    p_lab.add_argument("--safety", action="store_true", help="设置安全库存")
-    p_lab.add_argument("--category", help="分类名")
-    p_lab.add_argument("--threshold", type=int, help="安全阈值")
-    p_lab.add_argument("--list", action="store_true", help="查看安全库存列表")
-    p_lab.add_argument("--operator", help="设置默认操作人")
-    p_lab.add_argument("--overdue", type=int, help="设置逾期阈值(天)")
+    p_lab.add_argument("--codes", nargs="+")
+    p_lab.add_argument("--all", action="store_true")
+    p_lab.add_argument("--cols", type=int, default=2)
+    p_lab.add_argument("--output")
+    p_lab.add_argument("--safety", action="store_true")
+    p_lab.add_argument("--category")
+    p_lab.add_argument("--threshold", type=int)
+    p_lab.add_argument("--list", action="store_true")
+    p_lab.add_argument("--operator")
+    p_lab.add_argument("--overdue", type=int)
     p_lab.set_defaults(func=cmd_label)
 
     # export
     p_exp = subparsers.add_parser("export", help="导出盘点表")
-    p_exp.add_argument("--format", choices=["csv", "json", "txt", "all"], default="all",
-                       help="导出格式 (默认all)")
-    p_exp.add_argument("--output", help="输出文件名前缀")
+    p_exp.add_argument("--format", choices=["csv", "json", "txt", "all"], default="all")
+    p_exp.add_argument("--output")
     p_exp.set_defaults(func=cmd_export)
 
     return parser
 
 
 def main():
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     parser = build_parser()
     args = parser.parse_args()
-    
     try:
         args.func(args)
     except KeyboardInterrupt:
         print("\n操作已取消")
         sys.exit(1)
     except Exception as e:
-        print(f"❌ 发生错误: {e}")
+        print(f"错误: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

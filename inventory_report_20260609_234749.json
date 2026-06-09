@@ -1,6 +1,118 @@
 {
-  "items": {
-    "T001": {
+  "generated_at": "2026-06-09 23:47:49",
+  "operator": "李老师",
+  "summary": {
+    "total_types": 16,
+    "qty_available_total": 165,
+    "qty_borrowed_total": 2,
+    "qty_repair_total": 1,
+    "qty_scrapped_total": 0,
+    "onhand_inventory_value": 15243.0,
+    "total_locations": 4,
+    "total_operations": 19,
+    "active_borrow_records": 1,
+    "overdue_count": 0
+  },
+  "safety_stock": {
+    "_default": 5
+  },
+  "safety_alerts": [
+    {
+      "category": "体育玩具",
+      "available": 3,
+      "threshold": 5,
+      "gap": 2
+    },
+    {
+      "category": "盘盈待归类",
+      "available": 1,
+      "threshold": 5,
+      "gap": 4
+    }
+  ],
+  "overdue_items": [],
+  "category_stats": {
+    "积木益智": {
+      "types": 2,
+      "available": 19,
+      "borrowed": 2,
+      "repair": 0
+    },
+    "毛绒玩具": {
+      "types": 1,
+      "available": 13,
+      "borrowed": 0,
+      "repair": 1
+    },
+    "美术手工": {
+      "types": 2,
+      "available": 28,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "拼图益智": {
+      "types": 1,
+      "available": 8,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "电动玩具": {
+      "types": 1,
+      "available": 6,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "角色扮演": {
+      "types": 1,
+      "available": 5,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "图书绘本": {
+      "types": 1,
+      "available": 30,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "户外玩具": {
+      "types": 1,
+      "available": 10,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "体育玩具": {
+      "types": 1,
+      "available": 3,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "娃娃玩具": {
+      "types": 1,
+      "available": 6,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "模型玩具": {
+      "types": 2,
+      "available": 11,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "早教启蒙": {
+      "types": 1,
+      "available": 25,
+      "borrowed": 0,
+      "repair": 0
+    },
+    "盘盈待归类": {
+      "types": 1,
+      "available": 1,
+      "borrowed": 0,
+      "repair": 0
+    }
+  },
+  "items": [
+    {
       "code": "T001",
       "name": "乐高积木基础装",
       "category": "积木益智",
@@ -25,7 +137,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T002": {
+    {
       "code": "T002",
       "name": "毛绒小熊公仔",
       "category": "毛绒玩具",
@@ -50,7 +162,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T003": {
+    {
       "code": "T003",
       "name": "彩色蜡笔套装",
       "category": "美术手工",
@@ -75,7 +187,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T004": {
+    {
       "code": "T004",
       "name": "拼图100片世界地图",
       "category": "拼图益智",
@@ -100,7 +212,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T005": {
+    {
       "code": "T005",
       "name": "遥控小汽车",
       "category": "电动玩具",
@@ -125,7 +237,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T006": {
+    {
       "code": "T006",
       "name": "过家家厨房套装",
       "category": "角色扮演",
@@ -150,7 +262,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T007": {
+    {
       "code": "T007",
       "name": "木质积木50件套",
       "category": "积木益智",
@@ -175,7 +287,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T008": {
+    {
       "code": "T008",
       "name": "故事绘本30册",
       "category": "图书绘本",
@@ -200,7 +312,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T009": {
+    {
       "code": "T009",
       "name": "沙滩玩具套装",
       "category": "户外玩具",
@@ -225,7 +337,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T010": {
+    {
       "code": "T010",
       "name": "儿童篮球架",
       "category": "体育玩具",
@@ -250,7 +362,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T011": {
+    {
       "code": "T011",
       "name": "芭比娃娃礼盒",
       "category": "娃娃玩具",
@@ -275,7 +387,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T012": {
+    {
       "code": "T012",
       "name": "变形金刚模型",
       "category": "模型玩具",
@@ -300,7 +412,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T013": {
+    {
       "code": "T013",
       "name": "磁性画板",
       "category": "美术手工",
@@ -325,7 +437,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T014": {
+    {
       "code": "T014",
       "name": "数字认知卡片",
       "category": "早教启蒙",
@@ -350,7 +462,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T015": {
+    {
       "code": "T015",
       "name": "托马斯小火车套装",
       "category": "模型玩具",
@@ -375,7 +487,7 @@
       "due_date": "",
       "status": "在库"
     },
-    "T999": {
+    {
       "code": "T999",
       "name": "未知(T999)",
       "category": "盘盈待归类",
@@ -400,5 +512,120 @@
       "scan_count": 1,
       "remarks": "盘点盘盈新增, 来源会话CNTF3EAB734"
     }
-  }
+  ],
+  "locations": {
+    "A01-01": {
+      "code": "A01-01",
+      "description": "A区第1列",
+      "shelves": [
+        "A01-01-S1",
+        "A01-01-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-09 23:44:35"
+    },
+    "A01-02": {
+      "code": "A01-02",
+      "description": "A区第2列",
+      "shelves": [
+        "A01-02-S1",
+        "A01-02-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-09 23:44:35"
+    },
+    "A02-01": {
+      "code": "A02-01",
+      "description": "B区第1列",
+      "shelves": [
+        "A02-01-S1",
+        "A02-01-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-09 23:44:35"
+    },
+    "A02-02": {
+      "code": "A02-02",
+      "description": "B区第2列",
+      "shelves": [
+        "A02-02-S1",
+        "A02-02-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-09 23:44:35"
+    }
+  },
+  "borrow_records": [
+    {
+      "id": "BRB6036752",
+      "code": "T001",
+      "toy_name": "乐高积木基础装",
+      "borrower": "小班(张三)",
+      "qty": 3,
+      "qty_returned": 3,
+      "borrow_date": "2026-06-09",
+      "due_date": "2026-07-09",
+      "original_due": "2026-07-09",
+      "status": "closed",
+      "operator": "李老师",
+      "renew_count": 0,
+      "returns": [
+        {
+          "date": "2026-06-09",
+          "qty": 1,
+          "condition": "完好",
+          "operator": "李老师"
+        },
+        {
+          "date": "2026-06-09",
+          "qty": 2,
+          "condition": "完好",
+          "operator": "李老师"
+        }
+      ]
+    },
+    {
+      "id": "BR1782DD98",
+      "code": "T001",
+      "toy_name": "乐高积木基础装",
+      "borrower": "中班(李四)",
+      "qty": 2,
+      "qty_returned": 0,
+      "borrow_date": "2026-06-09",
+      "due_date": "2026-07-23",
+      "original_due": "2026-07-09",
+      "status": "active",
+      "operator": "王老师",
+      "renew_count": 1,
+      "returns": []
+    },
+    {
+      "id": "BRC4165D50",
+      "code": "T002",
+      "toy_name": "毛绒小熊公仔",
+      "borrower": "小班(张三)",
+      "qty": 2,
+      "qty_returned": 2,
+      "borrow_date": "2026-06-09",
+      "due_date": "2026-05-01",
+      "original_due": "2026-05-01",
+      "status": "closed",
+      "operator": "李老师",
+      "renew_count": 0,
+      "returns": [
+        {
+          "date": "2026-06-09",
+          "qty": 1,
+          "condition": "完好",
+          "operator": "李老师"
+        },
+        {
+          "date": "2026-06-09",
+          "qty": 1,
+          "condition": "待维修",
+          "operator": "李老师"
+        }
+      ]
+    }
+  ]
 }

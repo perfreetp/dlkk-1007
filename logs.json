@@ -1,88 +1,144 @@
 {
   "records": [
     {
-      "id": "a810935d",
-      "timestamp": "2026-06-09 23:26:05",
+      "id": "932293ad",
+      "timestamp": "2026-06-09 23:44:35",
       "operator": "system",
       "action": "INIT",
-      "detail": "初始化库位: 12个区域, 每区2层货架, 共3行4列"
+      "detail": "初始化库位: 4个区域, 每区2层货架, 2行2列"
     },
     {
-      "id": "a0dbbc2e",
-      "timestamp": "2026-06-09 23:26:17",
+      "id": "08bc7424",
+      "timestamp": "2026-06-09 23:44:54",
       "operator": "system",
       "action": "IMPORT",
-      "detail": "导入玩具台账: 成功15条, 跳过0条, 来源文件: sample_toys.csv"
+      "detail": "导入玩具台账: 成功15条, 跳过0条, 来源: sample_toys.csv"
     },
     {
-      "id": "fd6410cd",
-      "timestamp": "2026-06-09 23:26:35",
+      "id": "890bc26c",
+      "timestamp": "2026-06-09 23:45:36",
       "operator": "李老师",
-      "action": "SCAN-INBOUND",
-      "detail": "操作人:李老师; 成功:1条T100; 失败:0条; 详情:T100入库: 库位A03-04/A03-04-S1, 数量2"
+      "action": "SCAN-BORROW",
+      "detail": "操作人:李老师; 成功1件[T001]; 失败0件; [BRB6036752]T001x3借给小班(张三),到期2026-07-09"
     },
     {
-      "id": "da08e9a1",
-      "timestamp": "2026-06-09 23:26:46",
+      "id": "9789139d",
+      "timestamp": "2026-06-09 23:45:37",
       "operator": "王老师",
       "action": "SCAN-BORROW",
-      "detail": "操作人:王老师; 成功:3条T001, T003, T007; 失败:0条; 详情:T001借出: 王小宝(小班), 到期2026-05-10; T003借出: 王小宝(小班), 到期2026-05-10; T007借出: 王小宝(小班), 到期2026-05-10"
+      "detail": "操作人:王老师; 成功1件[T001]; 失败0件; [BR1782DD98]T001x2借给中班(李四),到期2026-07-09"
     },
     {
-      "id": "1292d242",
-      "timestamp": "2026-06-09 23:27:14",
-      "operator": "张老师",
+      "id": "7d3bb285",
+      "timestamp": "2026-06-09 23:45:37",
+      "operator": "李老师",
+      "action": "SCAN-BORROW",
+      "detail": "操作人:李老师; 成功0件[]; 失败1件; "
+    },
+    {
+      "id": "0bf8a152",
+      "timestamp": "2026-06-09 23:45:59",
+      "operator": "李老师",
+      "action": "SCAN-BORROW",
+      "detail": "操作人:李老师; 成功1件[T002]; 失败0件; [BRC4165D50]T002x2借给小班(张三),到期2026-05-01"
+    },
+    {
+      "id": "baff1d1c",
+      "timestamp": "2026-06-09 23:46:15",
+      "operator": "李老师",
       "action": "SCAN-RETURN",
-      "detail": "操作人:张老师; 成功:1条T001; 失败:0条; 详情:T001归还: 状态完好"
+      "detail": "操作人:李老师; 成功1件[T001]; 失败0件; T001归还1件(完好): BRB6036752x1"
     },
     {
-      "id": "b707039a",
-      "timestamp": "2026-06-09 23:27:14",
-      "operator": "张老师",
+      "id": "b7b3e7c4",
+      "timestamp": "2026-06-09 23:46:16",
+      "operator": "李老师",
+      "action": "SCAN-RENEW",
+      "detail": "操作人:李老师; 成功1件[T001]; 失败0件; [BR1782DD98]T001续借14天 2026-07-09→2026-07-23 (中班(李四))"
+    },
+    {
+      "id": "d67f749b",
+      "timestamp": "2026-06-09 23:46:16",
+      "operator": "李老师",
       "action": "SCAN-RETURN",
-      "detail": "操作人:张老师; 成功:1条T003; 失败:0条; 详情:T003归还: 状态轻微破损"
+      "detail": "操作人:李老师; 成功1件[T001]; 失败0件; T001归还2件(完好): BRB6036752x2"
     },
     {
-      "id": "c46b73ea",
-      "timestamp": "2026-06-09 23:27:14",
-      "operator": "张老师",
-      "action": "SCAN-SCRAP",
-      "detail": "操作人:张老师; 成功:1条T007; 失败:0条; 详情:T007报废: 零件丢失无法修复"
+      "id": "0c68c70e",
+      "timestamp": "2026-06-09 23:46:16",
+      "operator": "李老师",
+      "action": "SCAN-RETURN",
+      "detail": "操作人:李老师; 成功1件[T002]; 失败0件; T002归还1件(完好): BRC4165D50x1"
     },
     {
-      "id": "b2b1bb34",
-      "timestamp": "2026-06-09 23:27:33",
-      "operator": "陈老师",
-      "action": "MOVE",
-      "detail": "操作人:陈老师; 成功2件; T005: A02-01/A02-01-S1 -> A03-04/A03-04-S1; T006: A02-01/A02-01-S2 -> A03-04/A03-04-S1"
+      "id": "b44435ea",
+      "timestamp": "2026-06-09 23:46:16",
+      "operator": "李老师",
+      "action": "SCAN-RETURN",
+      "detail": "操作人:李老师; 成功1件[T002]; 失败0件; T002归还1件(待维修): BRC4165D50x1"
     },
     {
-      "id": "3b00c4c8",
-      "timestamp": "2026-06-09 23:28:00",
-      "operator": "张老师",
+      "id": "dba91ab3",
+      "timestamp": "2026-06-09 23:46:31",
+      "operator": "李老师",
+      "action": "COUNT-START",
+      "detail": "开启会话CNT72A60A29, 库位=A01-01, 账面2个品种"
+    },
+    {
+      "id": "7e706901",
+      "timestamp": "2026-06-09 23:46:31",
+      "operator": "李老师",
+      "action": "COUNT-SCAN",
+      "detail": "会话CNT72A60A29录入3条, 更新3, 盘盈3"
+    },
+    {
+      "id": "8d35ab99",
+      "timestamp": "2026-06-09 23:46:49",
+      "operator": "李老师",
+      "action": "COUNT-ABORT",
+      "detail": "放弃盘点会话CNT72A60A29"
+    },
+    {
+      "id": "280b34aa",
+      "timestamp": "2026-06-09 23:47:05",
+      "operator": "李老师",
+      "action": "COUNT-START",
+      "detail": "开启会话CNTF3EAB734, 库位=A01-01, 账面2个品种"
+    },
+    {
+      "id": "b7e1aa64",
+      "timestamp": "2026-06-09 23:47:05",
+      "operator": "李老师",
+      "action": "COUNT-SCAN",
+      "detail": "会话CNTF3EAB734录入3条, 更新3, 盘盈1"
+    },
+    {
+      "id": "4ad8c7ee",
+      "timestamp": "2026-06-09 23:47:16",
+      "operator": "李老师",
+      "action": "COUNT-APPLY",
+      "detail": "会话CNTF3EAB734调整3个品种, 净差-1; T001: 在场8→7 (-1); T002: 在场15→14 (-1); T999: 盘盈新增1件"
+    },
+    {
+      "id": "5e373b41",
+      "timestamp": "2026-06-09 23:47:16",
+      "operator": "李老师",
+      "action": "COUNT-CLOSE",
+      "detail": "关闭盘点会话CNTF3EAB734, 是否调整=是"
+    },
+    {
+      "id": "64ee4243",
+      "timestamp": "2026-06-09 23:47:38",
+      "operator": "李老师",
       "action": "SAFETY-STOCK",
-      "detail": "设置 积木益智 安全库存阈值为 15"
+      "detail": "设置 _default 安全库存阈值=5"
     },
     {
-      "id": "490e48c8",
-      "timestamp": "2026-06-09 23:28:00",
-      "operator": "张老师",
-      "action": "SAFETY-STOCK",
-      "detail": "设置 毛绒玩具 安全库存阈值为 10"
-    },
-    {
-      "id": "e200b16d",
-      "timestamp": "2026-06-09 23:28:19",
-      "operator": "张老师",
-      "action": "LABEL",
-      "detail": "生成标签 3 张 -> sample_labels.txt"
-    },
-    {
-      "id": "c1c1e105",
-      "timestamp": "2026-06-09 23:28:28",
-      "operator": "张老师",
+      "id": "e3d5410c",
+      "timestamp": "2026-06-09 23:47:49",
+      "operator": "李老师",
       "action": "EXPORT",
-      "detail": "导出盘点报告, 格式=all, 输出前缀=weekly_report"
+      "detail": "导出盘点报告, 格式=all, 前缀=inventory_report_20260609_234749"
     }
   ]
 }
