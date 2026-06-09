@@ -1,0 +1,88 @@
+{
+  "records": [
+    {
+      "id": "a810935d",
+      "timestamp": "2026-06-09 23:26:05",
+      "operator": "system",
+      "action": "INIT",
+      "detail": "初始化库位: 12个区域, 每区2层货架, 共3行4列"
+    },
+    {
+      "id": "a0dbbc2e",
+      "timestamp": "2026-06-09 23:26:17",
+      "operator": "system",
+      "action": "IMPORT",
+      "detail": "导入玩具台账: 成功15条, 跳过0条, 来源文件: sample_toys.csv"
+    },
+    {
+      "id": "fd6410cd",
+      "timestamp": "2026-06-09 23:26:35",
+      "operator": "李老师",
+      "action": "SCAN-INBOUND",
+      "detail": "操作人:李老师; 成功:1条T100; 失败:0条; 详情:T100入库: 库位A03-04/A03-04-S1, 数量2"
+    },
+    {
+      "id": "da08e9a1",
+      "timestamp": "2026-06-09 23:26:46",
+      "operator": "王老师",
+      "action": "SCAN-BORROW",
+      "detail": "操作人:王老师; 成功:3条T001, T003, T007; 失败:0条; 详情:T001借出: 王小宝(小班), 到期2026-05-10; T003借出: 王小宝(小班), 到期2026-05-10; T007借出: 王小宝(小班), 到期2026-05-10"
+    },
+    {
+      "id": "1292d242",
+      "timestamp": "2026-06-09 23:27:14",
+      "operator": "张老师",
+      "action": "SCAN-RETURN",
+      "detail": "操作人:张老师; 成功:1条T001; 失败:0条; 详情:T001归还: 状态完好"
+    },
+    {
+      "id": "b707039a",
+      "timestamp": "2026-06-09 23:27:14",
+      "operator": "张老师",
+      "action": "SCAN-RETURN",
+      "detail": "操作人:张老师; 成功:1条T003; 失败:0条; 详情:T003归还: 状态轻微破损"
+    },
+    {
+      "id": "c46b73ea",
+      "timestamp": "2026-06-09 23:27:14",
+      "operator": "张老师",
+      "action": "SCAN-SCRAP",
+      "detail": "操作人:张老师; 成功:1条T007; 失败:0条; 详情:T007报废: 零件丢失无法修复"
+    },
+    {
+      "id": "b2b1bb34",
+      "timestamp": "2026-06-09 23:27:33",
+      "operator": "陈老师",
+      "action": "MOVE",
+      "detail": "操作人:陈老师; 成功2件; T005: A02-01/A02-01-S1 -> A03-04/A03-04-S1; T006: A02-01/A02-01-S2 -> A03-04/A03-04-S1"
+    },
+    {
+      "id": "3b00c4c8",
+      "timestamp": "2026-06-09 23:28:00",
+      "operator": "张老师",
+      "action": "SAFETY-STOCK",
+      "detail": "设置 积木益智 安全库存阈值为 15"
+    },
+    {
+      "id": "490e48c8",
+      "timestamp": "2026-06-09 23:28:00",
+      "operator": "张老师",
+      "action": "SAFETY-STOCK",
+      "detail": "设置 毛绒玩具 安全库存阈值为 10"
+    },
+    {
+      "id": "e200b16d",
+      "timestamp": "2026-06-09 23:28:19",
+      "operator": "张老师",
+      "action": "LABEL",
+      "detail": "生成标签 3 张 -> sample_labels.txt"
+    },
+    {
+      "id": "c1c1e105",
+      "timestamp": "2026-06-09 23:28:28",
+      "operator": "张老师",
+      "action": "EXPORT",
+      "detail": "导出盘点报告, 格式=all, 输出前缀=weekly_report"
+    }
+  ]
+}
