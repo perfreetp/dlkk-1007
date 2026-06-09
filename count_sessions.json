@@ -1,18 +1,14 @@
 {
   "sessions": [
     {
-      "id": "CNTA44557B3",
-      "started_at": "2026-06-10 00:00:28",
-      "finished_at": "2026-06-10 00:00:59",
-      "operator": "张老师",
+      "id": "CNT68209AD1",
+      "started_at": "2026-06-10 00:12:50",
+      "finished_at": "2026-06-10 00:13:19",
+      "operator": "库管小刘",
       "location": "A01-01",
       "status": "closed",
       "stage": "reviewing",
       "counts": {
-        "T001": {
-          "qty": 7,
-          "name": "乐高积木基础装"
-        },
         "T002": {
           "qty": 13,
           "name": "毛绒小熊公仔"
@@ -20,26 +16,26 @@
       },
       "review_counts": {
         "T001": {
-          "qty": 8,
+          "qty": 10,
           "name": "乐高积木基础装",
           "reviewed_by": "王主任",
-          "reviewed_at": "2026-06-10 00:00:40"
+          "reviewed_at": "2026-06-10 00:13:04"
         },
         "T002": {
-          "qty": 13,
+          "qty": 15,
           "name": "毛绒小熊公仔",
           "reviewed_by": "王主任",
-          "reviewed_at": "2026-06-10 00:00:40"
+          "reviewed_at": "2026-06-10 00:13:04"
         },
         "T999": {
           "qty": 1,
           "name": "未知(T999)",
           "reviewed_by": "王主任",
-          "reviewed_at": "2026-06-10 00:00:40"
+          "reviewed_at": "2026-06-10 00:13:04"
         }
       },
       "reviewer": "王主任",
-      "reviewed_at": "2026-06-10 00:00:40",
+      "reviewed_at": "2026-06-10 00:13:04",
       "book_snapshot": {
         "T001": {
           "name": "乐高积木基础装",
@@ -67,59 +63,23 @@
         }
       },
       "adjustments_made": true,
-      "note": "6月月度盘点",
-      "last_updated": "2026-06-10 00:00:28",
-      "adjust_count": 3,
-      "adjust_qty_net": -3
-    },
-    {
-      "id": "CNTFD048020",
-      "started_at": "2026-06-10 00:01:00",
-      "finished_at": "2026-06-10 00:01:00",
-      "operator": "张老师",
-      "location": "A01-02",
-      "status": "closed",
-      "stage": "scanning",
-      "counts": {
-        "T004": {
-          "qty": 5,
-          "name": "拼图100片世界地图"
-        }
-      },
-      "review_counts": {},
-      "reviewer": null,
-      "reviewed_at": null,
-      "book_snapshot": {
-        "T003": {
-          "name": "彩色蜡笔套装",
-          "category": "美术手工",
-          "location": "A01-02",
-          "shelf": "A01-02-S1",
-          "qty_total": 20,
-          "qty_available": 17,
-          "qty_borrowed": 0,
-          "qty_repair": 3,
-          "qty_scrapped": 0,
-          "qty_onhand_book": 20
-        },
-        "T004": {
-          "name": "拼图100片世界地图",
-          "category": "拼图益智",
-          "location": "A01-02",
-          "shelf": "A01-02-S2",
-          "qty_total": 8,
-          "qty_available": 5,
-          "qty_borrowed": 3,
-          "qty_repair": 0,
-          "qty_scrapped": 0,
-          "qty_onhand_book": 5
-        }
-      },
-      "adjustments_made": true,
-      "note": "测试未盘到",
-      "last_updated": "2026-06-10 00:01:00",
+      "note": "月末盘点",
+      "last_updated": "2026-06-10 00:12:50",
       "adjust_count": 1,
-      "adjust_qty_net": -20
+      "adjust_qty_net": 1,
+      "adjustments": {
+        "T999": {
+          "name": "未知(T999)",
+          "book_onhand": 0,
+          "actual_qty": 1,
+          "diff": 1,
+          "to_available": 1,
+          "scrapped": 0,
+          "from_repair": 0,
+          "from_available": 0,
+          "reason": "盘盈新增"
+        }
+      }
     }
   ],
   "active_id": null

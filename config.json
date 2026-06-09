@@ -8,7 +8,7 @@
         "A01-01-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-09 23:59:11"
+      "created_at": "2026-06-10 00:12:18"
     },
     "A01-02": {
       "code": "A01-02",
@@ -18,7 +18,27 @@
         "A01-02-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-09 23:59:11"
+      "created_at": "2026-06-10 00:12:18"
+    },
+    "A01-03": {
+      "code": "A01-03",
+      "description": "A区第3列",
+      "shelves": [
+        "A01-03-S1",
+        "A01-03-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-10 00:12:18"
+    },
+    "A01-04": {
+      "code": "A01-04",
+      "description": "A区第4列",
+      "shelves": [
+        "A01-04-S1",
+        "A01-04-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-10 00:12:18"
     },
     "A02-01": {
       "code": "A02-01",
@@ -28,7 +48,7 @@
         "A02-01-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-09 23:59:11"
+      "created_at": "2026-06-10 00:12:18"
     },
     "A02-02": {
       "code": "A02-02",
@@ -38,11 +58,71 @@
         "A02-02-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-09 23:59:11"
+      "created_at": "2026-06-10 00:12:18"
+    },
+    "A02-03": {
+      "code": "A02-03",
+      "description": "B区第3列",
+      "shelves": [
+        "A02-03-S1",
+        "A02-03-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-10 00:12:18"
+    },
+    "A02-04": {
+      "code": "A02-04",
+      "description": "B区第4列",
+      "shelves": [
+        "A02-04-S1",
+        "A02-04-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-10 00:12:18"
+    },
+    "A03-01": {
+      "code": "A03-01",
+      "description": "C区第1列",
+      "shelves": [
+        "A03-01-S1",
+        "A03-01-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-10 00:12:18"
+    },
+    "A03-02": {
+      "code": "A03-02",
+      "description": "C区第2列",
+      "shelves": [
+        "A03-02-S1",
+        "A03-02-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-10 00:12:18"
+    },
+    "A03-03": {
+      "code": "A03-03",
+      "description": "C区第3列",
+      "shelves": [
+        "A03-03-S1",
+        "A03-03-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-10 00:12:18"
+    },
+    "A03-04": {
+      "code": "A03-04",
+      "description": "C区第4列",
+      "shelves": [
+        "A03-04-S1",
+        "A03-04-S2"
+      ],
+      "capacity": 50,
+      "created_at": "2026-06-10 00:12:18"
     }
   },
   "safety_stock": {},
   "overdue_days": 30,
-  "operator": "张老师",
+  "operator": "李园长",
   "initialized": true
 }

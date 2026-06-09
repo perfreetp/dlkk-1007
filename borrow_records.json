@@ -1,91 +1,58 @@
 {
   "records": [
     {
-      "id": "BR5C360BFD",
+      "id": "BR00235250",
       "code": "T003",
       "toy_name": "彩色蜡笔套装",
-      "borrower": "大班(王家长)",
+      "borrower": "小班(王老师)",
       "qty": 5,
-      "qty_returned": 5,
-      "borrow_date": "2026-06-09",
-      "due_date": "2026-07-09",
-      "original_due": "2026-07-09",
-      "status": "closed",
+      "qty_returned": 0,
+      "borrow_date": "2026-06-10",
+      "due_date": "2026-07-10",
+      "original_due": "2026-07-10",
+      "status": "active",
       "approval_status": "approved",
       "operator": "李园长",
       "handler": "王老师",
-      "purpose": "家长会活动",
-      "contact": "13800138000",
+      "purpose": "美术课教具",
+      "contact": "13811112222",
       "renew_count": 0,
-      "returns": [
-        {
-          "date": "2026-06-10",
-          "qty": 2,
-          "condition": "完好",
-          "operator": "张老师",
-          "remark": "归还完整2盒"
-        },
-        {
-          "date": "2026-06-10",
-          "qty": 3,
-          "condition": "轻微破损",
-          "operator": "张老师",
-          "remark": "3盒蜡笔断了几支"
-        }
-      ],
+      "returns": [],
       "history": [
         {
-          "time": "2026-06-09 23:59:12",
+          "time": "2026-06-10 00:12:34",
           "action": "create",
           "operator": "李园长",
-          "detail": "创建借出单, 数量5, 到期2026-07-09"
+          "detail": "创建借出单, 数量5, 到期2026-07-10"
         },
         {
-          "time": "2026-06-09 23:59:12",
+          "time": "2026-06-10 00:12:34",
           "action": "set_pending",
           "operator": "李园长",
           "detail": "状态设为 pending"
         },
         {
-          "time": "2026-06-10 00:00:02",
+          "time": "2026-06-10 00:12:34",
           "action": "approve",
           "operator": "李园长",
           "detail": "审批 通过"
-        },
-        {
-          "time": "2026-06-10 00:00:16",
-          "action": "return",
-          "operator": "张老师",
-          "detail": "归还2件, 状况=完好, 备注=归还完整2盒"
-        },
-        {
-          "time": "2026-06-10 00:00:16",
-          "action": "return",
-          "operator": "张老师",
-          "detail": "归还3件, 状况=轻微破损, 备注=3盒蜡笔断了几支"
-        },
-        {
-          "time": "2026-06-10 00:00:16",
-          "action": "close",
-          "operator": "张老师",
-          "detail": "全部归还完毕, 借出单关闭"
         }
       ],
       "remarks": ""
     },
     {
-      "id": "BR0D2AC895",
+      "id": "BR457E8245",
       "code": "T004",
       "toy_name": "拼图100片世界地图",
-      "borrower": "小班",
+      "borrower": "中班(张家长)",
       "qty": 3,
       "qty_returned": 0,
-      "borrow_date": "2026-06-09",
-      "due_date": "2026-07-09",
-      "original_due": "2026-07-09",
-      "status": "active",
+      "borrow_date": "2026-06-10",
+      "due_date": "2026-05-20",
+      "original_due": "2026-05-20",
+      "status": "overdue",
       "approval_status": "approved",
-      "operator": "张老师",
+      "operator": "李园长",
       "handler": "赵老师",
       "purpose": "公开课观摩",
       "contact": "666888",
@@ -93,10 +60,10 @@
       "returns": [],
       "history": [
         {
-          "time": "2026-06-09 23:59:27",
+          "time": "2026-06-10 00:12:34",
           "action": "create",
-          "operator": "张老师",
-          "detail": "创建借出单, 数量3, 到期2026-07-09"
+          "operator": "李园长",
+          "detail": "创建借出单, 数量3, 到期2026-05-20"
         }
       ],
       "remarks": ""
