@@ -1,41 +1,26 @@
 {
   "sessions": [
     {
-      "id": "CNT68209AD1",
-      "started_at": "2026-06-10 00:12:50",
-      "finished_at": "2026-06-10 00:13:19",
-      "operator": "库管小刘",
+      "id": "CNT25CFBCE7",
+      "started_at": "2026-06-10 00:32:06",
+      "finished_at": "2026-06-10 00:32:42",
+      "operator": "库管",
       "location": "A01-01",
       "status": "closed",
-      "stage": "reviewing",
+      "stage": "closed",
       "counts": {
+        "T001": {
+          "qty": 10,
+          "name": "乐高积木基础装"
+        },
         "T002": {
           "qty": 13,
           "name": "毛绒小熊公仔"
         }
       },
-      "review_counts": {
-        "T001": {
-          "qty": 10,
-          "name": "乐高积木基础装",
-          "reviewed_by": "王主任",
-          "reviewed_at": "2026-06-10 00:13:04"
-        },
-        "T002": {
-          "qty": 15,
-          "name": "毛绒小熊公仔",
-          "reviewed_by": "王主任",
-          "reviewed_at": "2026-06-10 00:13:04"
-        },
-        "T999": {
-          "qty": 1,
-          "name": "未知(T999)",
-          "reviewed_by": "王主任",
-          "reviewed_at": "2026-06-10 00:13:04"
-        }
-      },
-      "reviewer": "王主任",
-      "reviewed_at": "2026-06-10 00:13:04",
+      "review_counts": {},
+      "reviewer": null,
+      "reviewed_at": null,
       "book_snapshot": {
         "T001": {
           "name": "乐高积木基础装",
@@ -55,31 +40,146 @@
           "location": "A01-01",
           "shelf": "A01-01-S2",
           "qty_total": 15,
-          "qty_available": 15,
-          "qty_borrowed": 0,
+          "qty_available": 14,
+          "qty_borrowed": 1,
           "qty_repair": 0,
           "qty_scrapped": 0,
-          "qty_onhand_book": 15
+          "qty_onhand_book": 14
         }
       },
       "adjustments_made": true,
-      "note": "月末盘点",
-      "last_updated": "2026-06-10 00:12:50",
-      "adjust_count": 1,
-      "adjust_qty_net": 1,
-      "adjustments": {
-        "T999": {
-          "name": "未知(T999)",
-          "book_onhand": 0,
-          "actual_qty": 1,
-          "diff": 1,
-          "to_available": 1,
-          "scrapped": 0,
-          "from_repair": 0,
-          "from_available": 0,
-          "reason": "盘盈新增"
+      "note": "第1次月度盘点",
+      "last_updated": "2026-06-10 00:32:06",
+      "pre_adjust_snapshot": {
+        "T001": {
+          "name": "乐高积木基础装",
+          "qty_total": 10,
+          "qty_available": 10,
+          "qty_borrowed": 0,
+          "qty_repair": 0,
+          "qty_scrapped": 0
+        },
+        "T002": {
+          "name": "毛绒小熊公仔",
+          "qty_total": 15,
+          "qty_available": 14,
+          "qty_borrowed": 1,
+          "qty_repair": 0,
+          "qty_scrapped": 0
         }
-      }
+      },
+      "adjust_count": 1,
+      "adjust_qty_net": -1,
+      "adjustments": {
+        "T002": {
+          "name": "毛绒小熊公仔",
+          "book_onhand": 14,
+          "actual_qty": 13,
+          "diff": -1,
+          "scrapped": 1,
+          "from_repair": 0,
+          "from_available": 1,
+          "to_available": 0,
+          "reason": "数量差"
+        }
+      },
+      "adjust_confirmed_by": "李园长",
+      "adjust_confirmed_at": "2026-06-10 00:32:42"
+    },
+    {
+      "id": "CNTFE04F068",
+      "started_at": "2026-06-10 00:33:04",
+      "finished_at": "2026-06-10 00:33:19",
+      "operator": "王主任",
+      "location": "A01-01",
+      "status": "closed",
+      "stage": "closed",
+      "counts": {
+        "T002": {
+          "qty": 11,
+          "name": "毛绒小熊公仔"
+        }
+      },
+      "review_counts": {
+        "T001": {
+          "qty": 10,
+          "name": "乐高积木基础装",
+          "reviewed_by": "李园长",
+          "reviewed_at": "2026-06-10 00:33:04"
+        },
+        "T002": {
+          "qty": 11,
+          "name": "毛绒小熊公仔",
+          "reviewed_by": "李园长",
+          "reviewed_at": "2026-06-10 00:33:19"
+        }
+      },
+      "reviewer": "李园长",
+      "reviewed_at": "2026-06-10 00:33:19",
+      "book_snapshot": {
+        "T001": {
+          "name": "乐高积木基础装",
+          "category": "积木益智",
+          "location": "A01-01",
+          "shelf": "A01-01-S1",
+          "qty_total": 10,
+          "qty_available": 10,
+          "qty_borrowed": 0,
+          "qty_repair": 0,
+          "qty_scrapped": 0,
+          "qty_onhand_book": 10
+        },
+        "T002": {
+          "name": "毛绒小熊公仔",
+          "category": "毛绒玩具",
+          "location": "A01-01",
+          "shelf": "A01-01-S2",
+          "qty_total": 14,
+          "qty_available": 13,
+          "qty_borrowed": 1,
+          "qty_repair": 0,
+          "qty_scrapped": 1,
+          "qty_onhand_book": 13
+        }
+      },
+      "adjustments_made": true,
+      "note": "第2次月度盘点",
+      "last_updated": "2026-06-10 00:33:04",
+      "pre_adjust_snapshot": {
+        "T002": {
+          "name": "毛绒小熊公仔",
+          "qty_total": 14,
+          "qty_available": 13,
+          "qty_borrowed": 1,
+          "qty_repair": 0,
+          "qty_scrapped": 1
+        },
+        "T001": {
+          "name": "乐高积木基础装",
+          "qty_total": 10,
+          "qty_available": 10,
+          "qty_borrowed": 0,
+          "qty_repair": 0,
+          "qty_scrapped": 0
+        }
+      },
+      "adjust_count": 1,
+      "adjust_qty_net": -2,
+      "adjustments": {
+        "T002": {
+          "name": "毛绒小熊公仔",
+          "book_onhand": 13,
+          "actual_qty": 11,
+          "diff": -2,
+          "scrapped": 2,
+          "from_repair": 0,
+          "from_available": 2,
+          "to_available": 0,
+          "reason": "复核后数量差"
+        }
+      },
+      "adjust_confirmed_by": "李园长",
+      "adjust_confirmed_at": "2026-06-10 00:33:19"
     }
   ],
   "active_id": null

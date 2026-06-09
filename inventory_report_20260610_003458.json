@@ -1,23 +1,23 @@
 {
-  "generated_at": "2026-06-10 00:14:45",
+  "generated_at": "2026-06-10 00:34:58",
   "operator": "李园长",
   "summary": {
-    "total_types": 16,
-    "qty_available_total": 162,
-    "qty_borrowed_total": 8,
+    "total_types": 15,
+    "qty_available_total": 157,
+    "qty_borrowed_total": 9,
     "qty_repair_total": 0,
-    "qty_scrapped_total": 0,
-    "onhand_inventory_value": 15709.0,
+    "qty_scrapped_total": 3,
+    "onhand_inventory_value": 15353.0,
     "total_locations": 12,
-    "total_operations": 11,
-    "active_borrow_records": 2,
+    "total_operations": 20,
+    "active_borrow_records": 3,
     "overdue_count": 1
   },
   "safety_stock": {},
   "safety_alerts": [],
   "overdue_items": [
     {
-      "id": "BR457E8245",
+      "id": "BR064251CD",
       "code": "T004",
       "toy_name": "拼图100片世界地图",
       "borrower": "中班(张家长)",
@@ -36,8 +36,8 @@
     },
     "毛绒玩具": {
       "types": 1,
-      "available": 15,
-      "borrowed": 0,
+      "available": 11,
+      "borrowed": 1,
       "repair": 0
     },
     "美术手工": {
@@ -99,12 +99,6 @@
       "available": 25,
       "borrowed": 0,
       "repair": 0
-    },
-    "盘盈待归类": {
-      "types": 1,
-      "available": 1,
-      "borrowed": 0,
-      "repair": 0
     }
   },
   "items": [
@@ -143,15 +137,15 @@
       "shelf": "A01-01-S2",
       "price": 89.0,
       "condition": "完好",
-      "qty_total": 15,
-      "qty_available": 15,
-      "qty_borrowed": 0,
+      "qty_total": 12,
+      "qty_available": 11,
+      "qty_borrowed": 1,
       "qty_repair": 0,
-      "qty_scrapped": 0,
-      "quantity": 15,
+      "qty_scrapped": 3,
+      "quantity": 11,
       "inbound_date": "2026-02-20",
-      "last_scan": "",
-      "scan_count": 0,
+      "last_scan": "2026-06-10 00:33:19",
+      "scan_count": 3,
       "remarks": "",
       "borrower": "",
       "borrow_date": "",
@@ -175,7 +169,7 @@
       "qty_scrapped": 0,
       "quantity": 15,
       "inbound_date": "2026-03-10",
-      "last_scan": "2026-06-10 00:12:34",
+      "last_scan": "2026-06-10 00:31:51",
       "scan_count": 1,
       "remarks": "中班教学",
       "borrower": "",
@@ -200,7 +194,7 @@
       "qty_scrapped": 0,
       "quantity": 5,
       "inbound_date": "2025-12-01",
-      "last_scan": "2026-06-10 00:12:34",
+      "last_scan": "2026-06-10 00:31:52",
       "scan_count": 1,
       "remarks": "大班教具",
       "borrower": "",
@@ -482,31 +476,6 @@
       "borrow_date": "",
       "due_date": "",
       "status": "在库"
-    },
-    {
-      "code": "T999",
-      "name": "未知(T999)",
-      "category": "盘盈待归类",
-      "brand": "",
-      "age_range": "",
-      "location": "A01-01",
-      "shelf": "",
-      "price": 0,
-      "condition": "完好",
-      "status": "在库",
-      "borrower": "",
-      "borrow_date": "",
-      "due_date": "",
-      "qty_total": 1,
-      "qty_available": 1,
-      "qty_borrowed": 0,
-      "qty_repair": 0,
-      "qty_scrapped": 0,
-      "quantity": 1,
-      "inbound_date": "2026-06-10",
-      "last_scan": "2026-06-10 00:13:19",
-      "scan_count": 1,
-      "remarks": "盘点盘盈新增, 来源会话CNT68209AD1"
     }
   ],
   "locations": {
@@ -518,7 +487,7 @@
         "A01-01-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A01-02": {
       "code": "A01-02",
@@ -528,7 +497,7 @@
         "A01-02-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A01-03": {
       "code": "A01-03",
@@ -538,7 +507,7 @@
         "A01-03-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A01-04": {
       "code": "A01-04",
@@ -548,7 +517,7 @@
         "A01-04-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A02-01": {
       "code": "A02-01",
@@ -558,7 +527,7 @@
         "A02-01-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A02-02": {
       "code": "A02-02",
@@ -568,7 +537,7 @@
         "A02-02-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A02-03": {
       "code": "A02-03",
@@ -578,7 +547,7 @@
         "A02-03-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A02-04": {
       "code": "A02-04",
@@ -588,7 +557,7 @@
         "A02-04-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A03-01": {
       "code": "A03-01",
@@ -598,7 +567,7 @@
         "A03-01-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A03-02": {
       "code": "A03-02",
@@ -608,7 +577,7 @@
         "A03-02-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A03-03": {
       "code": "A03-03",
@@ -618,7 +587,7 @@
         "A03-03-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     },
     "A03-04": {
       "code": "A03-04",
@@ -628,12 +597,12 @@
         "A03-04-S2"
       ],
       "capacity": 50,
-      "created_at": "2026-06-10 00:12:18"
+      "created_at": "2026-06-10 00:31:35"
     }
   },
   "borrow_records": [
     {
-      "id": "BR00235250",
+      "id": "BR3AAD1766",
       "code": "T003",
       "toy_name": "彩色蜡笔套装",
       "borrower": "小班(王老师)",
@@ -652,19 +621,19 @@
       "returns": [],
       "history": [
         {
-          "time": "2026-06-10 00:12:34",
+          "time": "2026-06-10 00:31:51",
           "action": "create",
           "operator": "李园长",
           "detail": "创建借出单, 数量5, 到期2026-07-10"
         },
         {
-          "time": "2026-06-10 00:12:34",
+          "time": "2026-06-10 00:31:51",
           "action": "set_pending",
           "operator": "李园长",
           "detail": "状态设为 pending"
         },
         {
-          "time": "2026-06-10 00:12:34",
+          "time": "2026-06-10 00:31:52",
           "action": "approve",
           "operator": "李园长",
           "detail": "审批 通过"
@@ -673,7 +642,7 @@
       "remarks": ""
     },
     {
-      "id": "BR457E8245",
+      "id": "BR064251CD",
       "code": "T004",
       "toy_name": "拼图100片世界地图",
       "borrower": "中班(张家长)",
@@ -692,10 +661,54 @@
       "returns": [],
       "history": [
         {
-          "time": "2026-06-10 00:12:34",
+          "time": "2026-06-10 00:31:52",
           "action": "create",
           "operator": "李园长",
           "detail": "创建借出单, 数量3, 到期2026-05-20"
+        },
+        {
+          "time": "2026-06-10 00:33:58",
+          "action": "followup",
+          "operator": "李园长",
+          "detail": "状态:承诺归还; 承诺:2026-06-20; 原因:家长出差在外; 备注:电话沟通语气良好"
+        }
+      ],
+      "remarks": "",
+      "followups": [
+        {
+          "time": "2026-06-10 00:33:58",
+          "operator": "李园长",
+          "status": "承诺归还",
+          "promised_date": "2026-06-20",
+          "reason": "家长出差在外",
+          "note": "电话沟通语气良好"
+        }
+      ]
+    },
+    {
+      "id": "BR36635812",
+      "code": "T002",
+      "toy_name": "毛绒小熊公仔",
+      "borrower": "大班(刘老师)",
+      "qty": 1,
+      "qty_returned": 0,
+      "borrow_date": "2026-06-10",
+      "due_date": "2026-07-10",
+      "original_due": "2026-07-10",
+      "status": "active",
+      "approval_status": "approved",
+      "operator": "李园长",
+      "handler": "刘老师",
+      "purpose": "无联系方式测试",
+      "contact": "",
+      "renew_count": 0,
+      "returns": [],
+      "history": [
+        {
+          "time": "2026-06-10 00:31:52",
+          "action": "create",
+          "operator": "李园长",
+          "detail": "创建借出单, 数量1, 到期2026-07-10"
         }
       ],
       "remarks": ""

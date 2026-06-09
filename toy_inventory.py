@@ -375,6 +375,9 @@ def cmd_scan(args):
     borrow_list = borrow_db["records"]
 
     op = args.operation
+    if op == "followup":
+        cmd_scan_followup(args)
+        return
     operator = args.operator or cfg.get("operator", "system")
     codes = args.codes if args.codes else []
     qty_per = max(1, args.qty or 1)
@@ -1247,14 +1250,17 @@ def cmd_count_close(args):
     cfg = get_config()
     operator = args.operator or cfg.get("operator", "system")
     apply = args.apply
+    confirm = getattr(args, "confirm", False)
 
-    if apply:
+    # ====== 调账计算公共闭包 (返回预览/执行需要的所有信息, 不修改库存) ======
+    def compute_adjustments():
         inv = get_inventory()
         items = inv["items"]
         adjust_count = 0
         adjust_qty_net = 0
         details = []
         adjustments = {}
+        pre_snapshot = {}
         locs = list(cfg["locations"].keys())
         default_loc = locs[0] if locs else "A01-01"
 
@@ -1276,6 +1282,15 @@ def cmd_count_close(args):
                 it = items[code]
                 qa = it.get("qty_available", 0)
                 qr = it.get("qty_repair", 0)
+                qt = it.get("qty_total", 0)
+                qs = it.get("qty_scrapped", 0)
+                qb = it.get("qty_borrowed", 0)
+                # 调前快照
+                pre_snapshot[code] = {
+                    "name": it["name"],
+                    "qty_total": qt, "qty_available": qa,
+                    "qty_borrowed": qb, "qty_repair": qr, "qty_scrapped": qs
+                }
                 book_onhand = qa + qr
                 diff = actual_qty - book_onhand
                 if diff != 0:
@@ -1284,18 +1299,9 @@ def cmd_count_close(args):
                         loss = -diff
                         from_repair = min(qr, loss)
                         from_available = loss - from_repair
-                        it["qty_repair"] = max(0, qr - from_repair)
-                        it["qty_available"] = max(0, qa - from_available)
                         scrapped = loss
-                        it["qty_scrapped"] = it.get("qty_scrapped", 0) + scrapped
-                        it["qty_total"] = max(0, it.get("qty_total", 0) - loss)
                     else:
                         to_available = diff
-                        it["qty_available"] = qa + diff
-                        it["qty_total"] = it.get("qty_total", 0) + diff
-                    it["status"] = recompute_status(it)
-                    it["last_scan"] = now_str()
-                    it["scan_count"] = it.get("scan_count", 0) + 1
                     adjust_count += 1
                     adjust_qty_net += diff
                     if review_info:
@@ -1312,20 +1318,9 @@ def cmd_count_close(args):
                     }
             else:
                 a = source_info
-                inv["items"][code] = {
-                    "code": code,
-                    "name": a.get("name", f"玩具{code}"),
-                    "category": "盘盈待归类",
-                    "brand": "", "age_range": "",
-                    "location": session["location"] if session["location"] in cfg["locations"] else default_loc,
-                    "shelf": "", "price": 0, "condition": "完好",
-                    "status": "在库", "borrower": "", "borrow_date": "", "due_date": "",
-                    "qty_total": actual_qty, "qty_available": actual_qty,
-                    "qty_borrowed": 0, "qty_repair": 0, "qty_scrapped": 0,
-                    "quantity": actual_qty,
-                    "inbound_date": now_str()[:10],
-                    "last_scan": now_str(), "scan_count": 1,
-                    "remarks": f"盘点盘盈新增, 来源会话{session['id']}"
+                pre_snapshot[code] = {
+                    "name": a.get("name", f"玩具{code}"), "qty_total": 0,
+                    "qty_available": 0, "qty_borrowed": 0, "qty_repair": 0, "qty_scrapped": 0
                 }
                 adjust_count += 1
                 adjust_qty_net += actual_qty
@@ -1338,29 +1333,124 @@ def cmd_count_close(args):
                     "reason": "盘盈新增"
                 }
 
+        return {
+            "adjust_count": adjust_count, "adjust_qty_net": adjust_qty_net,
+            "details": details, "adjustments": adjustments,
+            "pre_snapshot": pre_snapshot, "default_loc": default_loc
+        }
+
+    def format_adj_rows(adj_map):
+        rows = []
+        for code, a in adj_map.items():
+            dest = []
+            if a.get("from_repair", 0): dest.append(f"维修→报废{a['from_repair']}")
+            if a.get("from_available", 0): dest.append(f"在库→报废{a['from_available']}")
+            if a.get("to_available", 0): dest.append(f"盘盈→在库{a['to_available']}")
+            if not dest:
+                dest = [("盘盈" if a["diff"] > 0 else "盘亏") + f" {abs(a['diff'])}"]
+            rows.append([code, a["name"], a["book_onhand"], a["actual_qty"],
+                        f"{a['diff']:+d}", "; ".join(dest), a.get("reason", "")])
+        return rows
+
+    # ====== apply 预览 / 确认 ======
+    if apply:
+        calc = compute_adjustments()
+        mode = "【预览 - 未写入库存】" if not confirm else "【执行结果】"
+        print(f"\n📋 调账{mode}: "
+              f"{calc['adjust_count']} 个品种, 净差异 {calc['adjust_qty_net']:+d} 件")
+        if calc["adjust_count"]:
+            print_table(["编号", "名称", "账面在场", "实盘", "差异", "去向", "原因"],
+                       format_adj_rows(calc["adjustments"]))
+
+        if not confirm:
+            # 只预览不写入
+            print(f"\n⚠  负责人确认流程:")
+            print(f"   ① 请核对上面的调账预览表")
+            print(f"   ② 如有错, 返回 check count-review 继续补扫修正")
+            print(f"   ③ 确认无误后再次执行 (加 --confirm):")
+            print(f"      check count-close --apply --confirm")
+            # 保存会话(不修改inventory)
+            session["stage"] = "closed_pending_confirm"
+            cs_obj["active_id"] = session["id"]  # 保持active等待确认
+            save_count_sessions(cs_obj)
+            log_action("COUNT-APPLY-PREVIEW",
+                       f"会话{session['id']}预览 {calc['adjust_count']} 个品种, "
+                       f"净差{calc['adjust_qty_net']:+d}", operator)
+            print(f"\nℹ  会话标记为 stage=closed_pending_confirm, 等待加 --confirm 确认调账")
+            return
+
+        # === --apply --confirm 真正调账 ===
+        inv = get_inventory()
+        items = inv["items"]
+        default_loc = calc["default_loc"]
+        # 永久保存调前快照
+        session["pre_adjust_snapshot"] = calc["pre_snapshot"]
+
+        for code, a in calc["adjustments"].items():
+            pre = calc["pre_snapshot"].get(code, {})
+            if code in items:
+                it = items[code]
+                it["qty_repair"] = max(0, pre.get("qty_repair", 0) - a.get("from_repair", 0))
+                it["qty_available"] = (pre.get("qty_available", 0)
+                                       - a.get("from_available", 0)
+                                       + a.get("to_available", 0))
+                it["qty_scrapped"] = pre.get("qty_scrapped", 0) + a.get("scrapped", 0)
+                it["qty_total"] = max(0, pre.get("qty_total", 0)
+                                      - a.get("scrapped", 0)
+                                      + a.get("to_available", 0))
+                it["status"] = recompute_status(it)
+                it["last_scan"] = now_str()
+                it["scan_count"] = it.get("scan_count", 0) + 1
+            else:
+                inv["items"][code] = {
+                    "code": code,
+                    "name": a["name"],
+                    "category": "盘盈待归类",
+                    "brand": "", "age_range": "",
+                    "location": session["location"] if session["location"] in cfg["locations"] else default_loc,
+                    "shelf": "", "price": 0, "condition": "完好",
+                    "status": "在库", "borrower": "", "borrow_date": "", "due_date": "",
+                    "qty_total": a["diff"], "qty_available": a["diff"],
+                    "qty_borrowed": 0, "qty_repair": 0, "qty_scrapped": 0,
+                    "quantity": a["diff"],
+                    "inbound_date": now_str()[:10],
+                    "last_scan": now_str(), "scan_count": 1,
+                    "remarks": f"盘点盘盈新增, 来源会话{session['id']}"
+                }
+
         save_inventory(inv)
         session["adjustments_made"] = True
-        session["adjust_count"] = adjust_count
-        session["adjust_qty_net"] = adjust_qty_net
-        session["adjustments"] = adjustments
-        log_action("COUNT-APPLY", f"会话{session['id']}调整{adjust_count}个品种, 净差{adjust_qty_net:+d}; {'; '.join(details[:500])}", operator)
-        print(f"\n🛠 已应用库存调整: {adjust_count} 个品种, 净差异 {adjust_qty_net:+d} 件")
-        if adjust_count:
-            adj_rows = []
-            for code, a in adjustments.items():
-                dest = []
-                if a["from_repair"]: dest.append(f"维修→报废{a['from_repair']}")
-                if a["from_available"]: dest.append(f"在库→报废{a['from_available']}")
-                if a["to_available"]: dest.append(f"盘盈→在库{a['to_available']}")
-                adj_rows.append([code, a["name"], a["book_onhand"], a["actual_qty"],
-                                 f"{a['diff']:+d}", "; ".join(dest)])
-            print_table(["编号", "名称", "账面在场", "实盘", "差异", "去向"], adj_rows)
+        session["adjust_count"] = calc["adjust_count"]
+        session["adjust_qty_net"] = calc["adjust_qty_net"]
+        session["adjustments"] = calc["adjustments"]
+        session["adjust_confirmed_by"] = operator
+        session["adjust_confirmed_at"] = now_str()
+        log_action("COUNT-APPLY-CONFIRM",
+                   f"会话{session['id']}确认调整{calc['adjust_count']}个品种, "
+                   f"净差{calc['adjust_qty_net']:+d}; "
+                   f"{'; '.join(calc['details'][:500])}", operator)
+        print(f"\n✅ 调账已写入库存! 确认人: {operator} / {session['adjust_confirmed_at']}")
+        # 显示调前→调后对比
+        compare_rows = []
+        for code, a in calc["adjustments"].items():
+            pre = calc["pre_snapshot"].get(code, {})
+            if code in items:
+                it = items[code]
+                pre_str = f"总{pre.get('qty_total',0)} 库{pre.get('qty_available',0)} 维{pre.get('qty_repair',0)} 报{pre.get('qty_scrapped',0)}"
+                post_str = f"总{it['qty_total']} 库{it['qty_available']} 维{it['qty_repair']} 报{it['qty_scrapped']}"
+                compare_rows.append([code, a["name"][:14], pre_str, post_str])
+        if compare_rows:
+            print(f"\n📊 调账前后对比(调前→调后):")
+            print_table(["编号", "名称", "调前(总/库/维/报)", "调后(总/库/维/报)"], compare_rows[:50])
+    else:
+        log_action("COUNT-CLOSE", f"会话{session['id']}关闭(未调账)", operator)
 
     session["status"] = "closed"
+    session["stage"] = "closed"
     session["finished_at"] = now_str()
     cs_obj["active_id"] = None
     save_count_sessions(cs_obj)
-    log_action("COUNT-CLOSE", f"关闭盘点会话{session['id']}, 是否调整={'是' if apply else '否'}", operator)
+    log_action("COUNT-CLOSE", f"关闭盘点会话{session['id']}, 是否调整={'是' if apply and confirm else '否(未apply或未confirm)'}", operator)
     print(f"\n✅ 盘点会话 [{session['id']}] 已关闭")
 
 
@@ -1398,6 +1488,26 @@ def cmd_count_list(args):
                                              f"{a['diff']:+d}",
                                              "; ".join(dest)])
                         print_table(["编号", "名称", "账面在场", "实盘", "差异", "去向"], adj_rows)
+                # 调账前后对比快照
+                if s.get("adjustments_made") and s.get("pre_adjust_snapshot") and s.get("adjustments"):
+                    print(f"\n📊 调账前后对比 (调前快照→调后实际)")
+                    cmp_rows = []
+                    pre = s["pre_adjust_snapshot"]
+                    adj = s["adjustments"]
+                    # 获取调后实际库存(从inventory.json重查)
+                    inv_cur = get_inventory()
+                    for code, a in adj.items():
+                        p = pre.get(code, {})
+                        cur = inv_cur["items"].get(code, {})
+                        pre_s = f"总{p.get('qty_total','?')} 库{p.get('qty_available','?')} 维{p.get('qty_repair','?')} 报{p.get('qty_scrapped','?')}"
+                        if cur:
+                            post_s = f"总{cur.get('qty_total','?')} 库{cur.get('qty_available','?')} 维{cur.get('qty_repair','?')} 报{cur.get('qty_scrapped','?')}"
+                        else:
+                            post_s = "(盘盈新增) 总" + str(a.get("actual_qty", 0))
+                        cmp_rows.append([code, a["name"][:14], pre_s, post_s])
+                    print_table(["编号", "名称", "调前(总/库/维/报)", "调后(总/库/维/报)"], cmp_rows[:50])
+                if s.get("adjust_confirmed_by"):
+                    print(f"📌 调账确认: {s['adjust_confirmed_by']} @ {s.get('adjust_confirmed_at', '')}")
                 # 差异回看
                 print(f"\n🔍 差异回看 (会话 {s['id']})")
                 fake_args = argparse.Namespace(id=s["id"], limit=args.limit)
@@ -1422,17 +1532,25 @@ def cmd_count_list(args):
 
 
 def cmd_dunning(args):
-    """借用人催还清单"""
+    """借用人催还清单 - 三责任人分离 + 筛选"""
     cfg = get_config()
     borrow_db = get_borrow_records()
     br = borrow_db["records"]
     overdue_days = cfg.get("overdue_days", 30)
     today = datetime.now().date()
 
+    # 筛选参数
+    filter_overdue = getattr(args, "overdue_only", False)
+    filter_missing_contact = getattr(args, "missing_contact", False)
+    filter_borrower = getattr(args, "borrower", None)
+    filter_limit = getattr(args, "dunning_limit", None)
+
     by_person = defaultdict(lambda: {
-        "records": [],       # [br_id, code, name, qty, outstanding, due, purpose, handler, contact, overdue_days, approval]
+        "records": [],  # [br_id, code, name, qty, out, due, purpose, borrow_handler, approver, last_op, contact, od, appr, follow_status, follow_cnt, promised, last_follow]
         "qty": 0, "overdue_qty": 0, "recs": 0, "overdue_recs": 0,
-        "contact": "", "handler": "", "latest_handler_time": ""
+        "contact": "", "borrow_handler": "", "approver": "", "last_op": "",
+        "followup_cnt_total": 0, "has_pending": 0,
+        "earliest_promised": "", "latest_follow": ""
     })
 
     for rec in br:
@@ -1441,9 +1559,7 @@ def cmd_dunning(args):
         out = rec["qty"] - rec["qty_returned"]
         if out <= 0: continue
 
-        person = rec["borrower"]
-        d = by_person[person]
-        # 计算逾期天数
+        # 计算逾期
         od = 0
         if rec["due_date"]:
             try:
@@ -1454,65 +1570,233 @@ def cmd_dunning(args):
                         rec["status"] = "overdue"
             except ValueError: pass
 
-        # 找最近一次经手人（history中最后一个的operator）
-        last_handler = rec.get("handler", "")
-        last_time = rec.get("created_at", "")
+        # 三责任人分离
+        borrow_handler = rec.get("handler", "")  # 借出登记时的经手人
+        approver = ""                            # 审批人(history中approve的operator)
+        last_operator = ""                       # 最后操作人
+        last_op_time = ""
         for h in rec.get("history", []):
-            if h.get("operator"):
-                last_handler = h["operator"]
-                last_time = h.get("time", last_time)
+            op = h.get("operator", "")
+            tm = h.get("time", "")
+            act = h.get("action", "")
+            if act == "approve" and op:
+                approver = op
+            if not last_op_time or tm > last_op_time:
+                last_op_time = tm
+                last_operator = op or borrow_handler
+        if not last_operator:
+            last_operator = rec.get("handler", "")
 
-        d["records"].append([
+        # 跟进记录(需求4)
+        followups = rec.get("followups", [])
+        follow_cnt = len(followups)
+        follow_status = "未跟进"
+        promised = ""
+        last_follow = ""
+        if followups:
+            last_fu = followups[-1]
+            follow_status = last_fu.get("status", "已跟进")
+            promised = last_fu.get("promised_date", "")
+            last_follow = last_fu.get("time", "")[:16]
+
+        # 按借用人级别汇总信息
+        person = rec["borrower"]
+        d = by_person[person]
+        rec_data = [
             rec["id"], rec["code"], rec["toy_name"], rec["qty"], out,
-            rec["due_date"], rec.get("purpose", ""), rec.get("handler", ""),
-            rec.get("contact", ""), od, rec.get("approval_status", "approved")
-        ])
+            rec["due_date"], rec.get("purpose", ""), borrow_handler, approver,
+            last_operator, rec.get("contact", ""), od,
+            rec.get("approval_status", "approved"),
+            follow_status, follow_cnt, promised, last_follow
+        ]
+        d["records"].append(rec_data)
         d["qty"] += out
         d["recs"] += 1
         if od > 0:
             d["overdue_qty"] += out
             d["overdue_recs"] += 1
-        # 汇总联系方式与最近经手人
         if rec.get("contact") and not d["contact"]:
             d["contact"] = rec["contact"]
-        # 最近经手人（取最后操作时间的）
-        if not d["latest_handler_time"] or last_time > d["latest_handler_time"]:
-            d["latest_handler_time"] = last_time
-            d["handler"] = last_handler or rec.get("handler", "")
+        if borrow_handler and not d["borrow_handler"]:
+            d["borrow_handler"] = borrow_handler
+        if approver and not d["approver"]:
+            d["approver"] = approver
+        if last_operator:
+            d["last_op"] = last_operator
+        if follow_cnt:
+            d["followup_cnt_total"] += follow_cnt
+            if follow_status not in ("已处理", "已归还", "无需催还"):
+                d["has_pending"] += 1
+            if promised:
+                if not d["earliest_promised"] or promised < d["earliest_promised"]:
+                    d["earliest_promised"] = promised
+            if last_follow:
+                if not d["latest_follow"] or last_follow > d["latest_follow"]:
+                    d["latest_follow"] = last_follow
 
     save_borrow_records(borrow_db)
 
+    # === 应用筛选 ===
+    filtered = {}
+    for p, info in by_person.items():
+        if filter_borrower and filter_borrower not in p: continue
+        if filter_overdue and info["overdue_qty"] <= 0: continue
+        if filter_missing_contact and info["contact"]: continue
+        filtered[p] = info
+    by_person = filtered
+
+    # === 排序 + 取前N ===
+    sorted_people = sorted(by_person.keys(),
+                          key=lambda x: (-by_person[x]["overdue_qty"],
+                                         -by_person[x]["qty"]))
+    if filter_limit: sorted_people = sorted_people[:filter_limit]
+
     print(f"\n📞 借用人催还清单 (逾期阈值: {overdue_days}天)")
-    print(f"  共 {len(by_person)} 位借用人, {sum(v['qty'] for v in by_person.values())} 件未归还, "
-          f"其中逾期 {sum(v['overdue_qty'] for v in by_person.values())} 件")
-    if not by_person:
-        print("  ✅ 暂无未归还的借出, 责任已闭环")
+    filters = []
+    if filter_overdue: filters.append("仅逾期")
+    if filter_missing_contact: filters.append("联系方式缺失")
+    if filter_borrower: filters.append(f"借用人含'{filter_borrower}'")
+    if filter_limit: filters.append(f"前{filter_limit}人")
+    if filters: print(f"  筛选条件: {', '.join(filters)}")
+    print(f"  共 {len(sorted_people)} 位借用人, "
+          f"{sum(by_person[p]['qty'] for p in sorted_people)} 件未归还, 其中逾期 "
+          f"{sum(by_person[p]['overdue_qty'] for p in sorted_people)} 件")
+    if not sorted_people:
+        print("  ✅ 符合条件的借用人为空")
         return
 
-    # 汇总表
+    # === 汇总表 ===
     sum_rows = []
-    for p in sorted(by_person.keys(), key=lambda x: (-by_person[x]["overdue_qty"], -by_person[x]["qty"])):
+    for p in sorted_people:
         info = by_person[p]
+        note = []
+        if info["overdue_qty"] > 0: note.append("🔥逾期")
+        if not info["contact"]: note.append("⚠缺联系方式")
+        if info["followup_cnt_total"] > 0:
+            note.append(f"已跟进{info['followup_cnt_total']}次")
+        if info["has_pending"] > 0 and info["followup_cnt_total"] > 0:
+            note.append(f"{info['has_pending']}笔待归还")
+        if info["earliest_promised"]:
+            note.append(f"承诺最早{info['earliest_promised']}")
         sum_rows.append([
             p, info["recs"], info["qty"], info["overdue_recs"], info["overdue_qty"],
-            info["handler"], info["contact"]
+            info["borrow_handler"] or "-", info["approver"] or "-", info["last_op"] or "-",
+            info["contact"] or "-",
+            f"未跟进" if info["followup_cnt_total"] == 0 else (f"{info['followup_cnt_total']}次/待{info['has_pending']}笔"),
+            info["earliest_promised"] or "-",
+            "; ".join(note)
         ])
-    print(f"\n📊 催还责任汇总 (按逾期数/未还数排序)")
-    print_table(["借用人", "未结笔数", "未还件数", "逾期笔数", "逾期件数", "最近经手人", "联系方式"], sum_rows)
+    print(f"\n📊 催还责任汇总 (三责任人分离+跟进状态)")
+    print_table(["借用人", "笔数", "未还", "逾期笔", "逾期件",
+                "借出经手人★", "审批人", "最后操作人", "联系方式",
+                "跟进", "承诺日期", "备注"], sum_rows)
 
-    # 逐人明细
-    print(f"\n📋 催还明细 (按借用人分组, 可直接用于沟通)")
-    for p in sorted(by_person.keys(), key=lambda x: (-by_person[x]["overdue_qty"], -by_person[x]["qty"])):
+    # === 逐人明细 ===
+    print(f"\n📋 催还明细 (按借用人分组)")
+    for p in sorted_people:
         info = by_person[p]
-        print(f"\n  👤 {p}  —  未还{info['qty']}件(逾期{info['overdue_qty']}件)  经手人:{info['handler']}  联系方式:{info['contact'] or '-'}")
-        headers = ["单号", "编号", "玩具名称", "借出", "未还", "到期日", "逾期(天)", "用途", "审批"]
+        print(f"\n  👤 {p}  —  "
+              f"未还{info['qty']}件(逾期{info['overdue_qty']}件)  "
+              f"借出:{info['borrow_handler'] or '-'} / 审批:{info['approver'] or '-'} / 最后操作:{info['last_op'] or '-'}  "
+              f"联系方式:{info['contact'] or '⚠缺失'}")
+        headers = ["单号", "编号", "玩具名称", "借出", "未还", "到期日", "逾期天",
+                  "借出经手人", "审批人", "用途", "审批状态",
+                  "跟进状态", "跟进次", "承诺日期", "最后跟进"]
         rows = []
-        for rid, code, name, qty, out, due, purpose, _h, _c, od, appr in info["records"]:
-            rows.append([rid, code, name[:16], qty, out, due or "-", od if od > 0 else "-", (purpose or "-")[:12], appr])
+        for rd in info["records"]:
+            (rid, code, name, qty, out, due, purpose, bh, ap, lop, contact, od, appr,
+             fs, fc, prm, lf) = rd
+            rows.append([rid, code, name[:16], qty, out, due or "-",
+                        od if od > 0 else "-",
+                        bh[:8] or "-", ap[:8] or "-",
+                        (purpose or "-")[:10], appr,
+                        fs, fc, prm or "-", lf or "-"])
         print_table(headers, rows)
 
-    print(f"\n💡 建议: 优先联系逾期≥7天的借用人, 核对借用目的与经手人后安排归还; "
-          f"长期未还可标记为逾期责任")
+    print(f"\n💡 使用说明:")
+    print(f"  ★ 借出经手人: 登记借出的老师, 优先联系确认借用目的")
+    print(f"  筛选参数: --overdue-only / --missing-contact / --borrower <关键字> / --dunning-limit <N>")
+    print(f"  登记催跟进: scan followup --br-id BRxxxx --followup-status 已联系 --promised-date 2026-06-20")
+
+
+def cmd_scan_followup(args):
+    """scan followup 登记催跟进"""
+    borrow_db = get_borrow_records()
+    br = borrow_db["records"]
+    cfg = get_config()
+    operator = args.operator or cfg.get("default_operator", "系统")
+
+    # 定位借出单
+    targets = []
+    if getattr(args, "br_id", None):
+        targets = [r for r in br if r["id"] == args.br_id]
+    elif getattr(args, "borrower", None):
+        kw = args.borrower
+        for r in br:
+            if r["status"] in ("closed", "rejected"): continue
+            if r.get("approval_status") == "rejected": continue
+            out = r["qty"] - r["qty_returned"]
+            if out <= 0: continue
+            if kw in r["borrower"]:
+                targets.append(r)
+    elif getattr(args, "codes", None):
+        for code in args.codes:
+            for r in br:
+                if r["code"] != code: continue
+                if r["status"] in ("closed", "rejected"): continue
+                if r.get("approval_status") == "rejected": continue
+                out = r["qty"] - r["qty_returned"]
+                if out <= 0: continue
+                targets.append(r)
+
+    if not targets:
+        print("❌ 未找到符合条件的借出单 (指定--br-id / --borrower / --codes)")
+        return
+
+    if not getattr(args, "followup_status", None):
+        print("❌ 请指定 --followup-status (已联系/承诺归还/暂缓/已处理/无需催还)")
+        return
+
+    fu_status = args.followup_status
+    promised = args.promised_date or ""
+    note = getattr(args, "followup_note", None) or ""
+    reason = args.reason or ""
+
+    success = []
+    for r in targets:
+        # 写入followups数组
+        if "followups" not in r:
+            r["followups"] = []
+        entry = {
+            "time": now_str(),
+            "operator": operator,
+            "status": fu_status,
+            "promised_date": promised,
+            "reason": reason,
+            "note": note
+        }
+        r["followups"].append(entry)
+
+        # history同步留痕
+        if "history" not in r:
+            r["history"] = []
+        detail_parts = [f"状态:{fu_status}"]
+        if promised: detail_parts.append(f"承诺:{promised}")
+        if reason: detail_parts.append(f"原因:{reason}")
+        if note: detail_parts.append(f"备注:{note}")
+        r["history"].append({
+            "time": entry["time"], "action": "followup",
+            "operator": operator, "detail": "; ".join(detail_parts)
+        })
+        success.append((r["id"], r["borrower"], r["code"], r["toy_name"],
+                       r["qty"] - r["qty_returned"]))
+
+    save_borrow_records(borrow_db)
+    print(f"\n✅ 催跟进登记完成: {len(success)} 笔")
+    headers = ["借出单号", "借用人", "编号", "玩具名称", "未还数"]
+    print_table(headers, success)
+    log_action("FOLLOWUP", f"状态={fu_status}, 目标{len(success)}笔, "
+               f"承诺{promised or '-'}, 原因{reason or '-'}", operator)
 
 
 def cmd_export_count(args):
@@ -1652,6 +1936,130 @@ def cmd_export_count(args):
     print(f"\n✅ 盘点差异表导出完成！可直接发送给负责人复核。")
 
 
+def cmd_count_trend(args):
+    """库位盘点趋势: 最近N次差异变化 + 问题玩具排行"""
+    cs = get_count_sessions()
+    loc = args.location
+    n = args.limit
+    top_n = args.top
+
+    sessions = [s for s in cs["sessions"]
+                if s.get("location") == loc and s.get("status") == "closed"]
+    sessions.sort(key=lambda s: s["started_at"], reverse=True)
+    sessions = sessions[:n]
+
+    if not sessions:
+        print(f"❌ 库位 {loc} 尚无已完成的盘点会话")
+        return
+
+    print(f"\n📈 库位 {loc} 盘点趋势分析 (最近 {len(sessions)} 次盘点, TOP{top_n} 问题玩具)")
+    sessions.reverse()  # 倒回正序(由旧→新)
+
+    # 每次会话的汇总 + 逐玩具差异
+    trend_rows = []
+    code_stats = defaultdict(lambda: {
+        "name": "", "total_diff_abs": 0, "total_loss": 0, "total_gain": 0,
+        "times_diff": 0, "times_missing": 0,
+        "history": []  # [(date_str, diff_str, status)]
+    })
+
+    for s in sessions:
+        res = analyze_diff(s)
+        sm = res["summary"]
+        net_diff = sm["actual_qty"] - sm["book_qty"]
+        loss_abs = sum(abs(c["diff"]) for c in res["cols_all"] if c["diff"] < 0)
+        gain_abs = sum(c["diff"] for c in res["cols_all"] if c["diff"] > 0)
+        diff_types = (sm["diff_pending"] + sm["diff_reviewed"] +
+                      sm["missing_pending"] + sm["missing_confirmed"] +
+                      sm["extra_pending"] + sm["extra_reviewed"])
+        trend_rows.append([s["id"], s["started_at"][:16],
+                          sm["book_types"], sm["book_qty"],
+                          sm["actual_types"], sm["actual_qty"],
+                          f"{net_diff:+d}",
+                          sm["matched_reviewed"] + sm["matched"],
+                          diff_types, loss_abs, gain_abs,
+                          s.get("reviewer", "-"),
+                          "是" if s.get("adjustments_made") else ""])
+
+        # 统计逐玩具
+        for c in res["cols_all"]:
+            if c["diff"] == 0: continue
+            st = code_stats[c["code"]]
+            st["name"] = c["name"]
+            st["total_diff_abs"] += abs(c["diff"])
+            if c["diff"] < 0:
+                st["total_loss"] += abs(c["diff"])
+            else:
+                st["total_gain"] += c["diff"]
+            st["times_diff"] += 1
+            if "missing" in c.get("status", ""):
+                st["times_missing"] += 1
+            tag = {
+                "matched": "相符", "matched_reviewed": "相符(复)",
+                "盘盈_pending": "盘盈", "盘盈_reviewed": "盘盈(复)",
+                "盘亏_pending": "盘亏", "盘亏_reviewed": "盘亏(复)",
+                "missing_pending": "未盘", "missing_confirmed": "未盘(亏)",
+                "extra_pending": "盘盈新", "extra_reviewed": "盘盈新(复)"
+            }.get(c.get("status", ""), c.get("status", ""))
+            st["history"].append(f"{s['started_at'][5:10]}{c['diff']:+d}({tag})")
+
+    # 会话趋势表
+    print(f"\n【一、会话级趋势 (旧→新)】")
+    print_table(["会话ID", "开始时间", "账面(种/件)", "实盘(种/件)", "净差",
+                 "相符", "差异种", "盘亏件", "盘盈件", "复核人", "调账"],
+                [[r[0], r[1], f"{r[2]}/{r[3]}", f"{r[4]}/{r[5]}", r[6],
+                  r[7], r[8], r[9], r[10], r[11], r[12]] for r in trend_rows])
+
+    # 问题玩具排行
+    ranked = sorted(code_stats.items(),
+                   key=lambda kv: (-kv[1]["total_diff_abs"], -kv[1]["times_diff"]))[:top_n]
+    print(f"\n【二、问题玩具 TOP{min(top_n, len(ranked))} (按累计差异绝对值)】")
+    rank_rows = []
+    for code, st in ranked:
+        rank_rows.append([code, st["name"][:18],
+                         st["times_diff"], st["times_missing"],
+                         st["total_loss"], st["total_gain"], st["total_diff_abs"],
+                         " | ".join(st["history"][-6:])])
+    print_table(["编号", "名称", "出差异次", "未盘到次",
+                 "累计盘亏", "累计盘盈", "累计绝对差", "最近6次变化(月-日 差异(状态))"],
+                rank_rows)
+
+    # 建议
+    if ranked:
+        bad_codes = [f"{c}(差{st['times_diff']}次)" for c, st in ranked[:3] if st["times_diff"] >= 2]
+        if bad_codes:
+            print(f"\n💡 建议: 反复出问题的玩具 {'; '.join(bad_codes)}, "
+                  f"可考虑加强交接管理或调整存放位置。")
+
+    # 可选导出CSV
+    if args.export:
+        csv_path = args.export if args.export.endswith(".csv") else f"{args.export}.csv"
+        with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f)
+            w.writerow([f"库位{loc}盘点趋势", f"回看{len(sessions)}次", f"生成:{now_str()}"])
+            w.writerow([])
+            w.writerow(["会话级趋势"])
+            w.writerow(["会话ID", "开始时间", "账面品种", "账面件数",
+                       "实盘品种", "实盘件数", "净差异",
+                       "相符品种", "差异品种", "盘亏件数", "盘盈件数",
+                       "复核人", "是否调账"])
+            for r in trend_rows:
+                w.writerow([r[0], r[1], r[2], r[3], r[4], r[5], r[6],
+                           r[7], r[8], r[9], r[10], r[11], r[12]])
+            w.writerow([])
+            w.writerow([f"问题玩具TOP{top_n}"])
+            w.writerow(["编号", "名称", "出差异次", "未盘到次",
+                       "累计盘亏", "累计盘盈", "累计绝对差", "最近变化"])
+            for code, st in ranked:
+                w.writerow([code, st["name"], st["times_diff"], st["times_missing"],
+                           st["total_loss"], st["total_gain"], st["total_diff_abs"],
+                           " | ".join(st["history"])])
+        log_action("COUNT-TREND", f"库位{loc}趋势导出 -> {csv_path}")
+        print(f"\n📄 趋势CSV -> {csv_path}")
+
+    log_action("COUNT-TREND", f"库位{loc}趋势分析, 回看{len(sessions)}次")
+
+
 # ==================== check 命令 ====================
 
 def cmd_check(args):
@@ -1671,6 +2079,8 @@ def cmd_check(args):
             cmd_count_list(args)
         elif sub == "export":
             cmd_export_count(args)
+        elif sub == "trend":
+            cmd_count_trend(args)
         elif sub == "abort":
             cs_obj, s = find_active_session()
             if s:
@@ -2508,7 +2918,7 @@ def build_parser():
 命令速查:
   init     初始化仓库库位结构
   import   导入玩具台账 (CSV/JSON)
-  scan     扫码登记: inbound入库/borrow借出/return归还/renew续借/scrap报废
+  scan     扫码登记: inbound入库/borrow借出/return归还/renew续借/scrap报废/followup催跟进
   move     库位调拨 (单件/整库)
   check    盘点检查 / 盘点会话管理
   report   统计报告: diff/age/category/borrow/logs
@@ -2521,12 +2931,14 @@ def build_parser():
   check count-review  复核环节: 补扫差异/--only-diff列差异清单
   check count-diff    查看账面vs实盘差异 (--id 回看历史会话)
   check count-export  按会话导出盘点差异表(CSV/TXT, 初盘/复核/最终)
-  check count-close   结束会话 [--apply 一键调账]
+  check count-trend   库位盘点趋势: 最近N次盘点差异变化/反复出问题排行
+  check count-close   结束会话 [--apply --confirm 调账(需负责人二次确认)]
   check count-list    历史会话列表 (--id 回看会话详情+差异+调账)
   check count-abort   放弃当前会话
 
 责任催还:
-  check --dunning     打印借用人催还清单(未还/逾期/联系方式)
+  check --dunning     打印借用人催还清单(支持 --overdue-only / --missing-contact / --borrower 筛选)
+  scan followup       登记催跟进结果(已联系/承诺归还/暂缓/已处理)
         """
     )
     subparsers = parser.add_subparsers(dest="command", required=True, help="可用命令")
@@ -2551,7 +2963,7 @@ def build_parser():
 
     # scan
     p_scan = subparsers.add_parser("scan", help="扫码操作")
-    p_scan.add_argument("operation", choices=["inbound", "borrow", "return", "renew", "scrap"])
+    p_scan.add_argument("operation", choices=["inbound", "borrow", "return", "renew", "scrap", "followup"])
     p_scan.add_argument("--codes", nargs="+")
     p_scan.add_argument("--qty", type=int, default=1)
     p_scan.add_argument("--operator")
@@ -2575,6 +2987,13 @@ def build_parser():
     p_scan.add_argument("--approve", action="store_true")
     p_scan.add_argument("--reject", action="store_true")
     p_scan.add_argument("--remark")
+    # followup 催跟进专用参数
+    p_scan.add_argument("--br-id", help="指定借出单号(用于followup精确登记)")
+    p_scan.add_argument("--followup-status", dest="followup_status",
+                        choices=["已联系", "承诺归还", "暂缓", "已处理", "无需催还"],
+                        help="催跟进状态: 已联系/承诺归还/暂缓/已处理/无需催还")
+    p_scan.add_argument("--promised-date", help="承诺归还日期(YYYY-MM-DD)")
+    p_scan.add_argument("--followup-note", dest="followup_note", help="催跟进备注(沟通内容等)")
     p_scan.set_defaults(func=cmd_scan)
 
     # move
@@ -2594,6 +3013,10 @@ def build_parser():
     p_check.add_argument("--borrower")
     p_check.add_argument("--overdue", action="store_true")
     p_check.add_argument("--dunning", action="store_true", help="打印借用人催还清单(未还/逾期/联系方式/经手人)")
+    # dunning 筛选参数
+    p_check.add_argument("--overdue-only", action="store_true", help="催还清单仅显示逾期者")
+    p_check.add_argument("--missing-contact", action="store_true", help="催还清单仅显示联系方式缺失者")
+    p_check.add_argument("--dunning-limit", type=int, dest="dunning_limit", help="催还清单显示前N人(按逾期/未还排序)")
     p_check.add_argument("--yes", action="store_true")
 
     check_sub = p_check.add_subparsers(dest="count_cmd")
@@ -2628,8 +3051,16 @@ def build_parser():
     cs_export.add_argument("--output", help="输出路径(不含扩展名, 默认 count_{id})")
     cs_export.set_defaults(count_cmd="export", func=cmd_check)
 
-    cs_close = check_sub.add_parser("count-close", help="结束会话(可选调账)")
-    cs_close.add_argument("--apply", action="store_true", help="应用差异调整到库存")
+    cs_trend = check_sub.add_parser("count-trend", help="库位盘点趋势: 最近N次差异变化/问题玩具排行")
+    cs_trend.add_argument("--location", required=True, help="指定库位(如A01-01)")
+    cs_trend.add_argument("--limit", type=int, default=5, help="回看最近N次盘点(默认5)")
+    cs_trend.add_argument("--top", type=int, default=10, help="显示问题玩具TOP N(默认10)")
+    cs_trend.add_argument("--export", help="导出趋势CSV到指定路径(可选)")
+    cs_trend.set_defaults(count_cmd="trend", func=cmd_check)
+
+    cs_close = check_sub.add_parser("count-close", help="结束会话(可选调账: --apply --confirm)")
+    cs_close.add_argument("--apply", action="store_true", help="预览调账差异, 配合--confirm才真正写入")
+    cs_close.add_argument("--confirm", action="store_true", help="负责人二次确认后才真正调账(必须与--apply同时使用)")
     cs_close.add_argument("--operator")
     cs_close.set_defaults(count_cmd="close", func=cmd_check)
 

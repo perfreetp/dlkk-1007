@@ -1,7 +1,7 @@
 {
   "records": [
     {
-      "id": "BR00235250",
+      "id": "BR3AAD1766",
       "code": "T003",
       "toy_name": "彩色蜡笔套装",
       "borrower": "小班(王老师)",
@@ -20,19 +20,19 @@
       "returns": [],
       "history": [
         {
-          "time": "2026-06-10 00:12:34",
+          "time": "2026-06-10 00:31:51",
           "action": "create",
           "operator": "李园长",
           "detail": "创建借出单, 数量5, 到期2026-07-10"
         },
         {
-          "time": "2026-06-10 00:12:34",
+          "time": "2026-06-10 00:31:51",
           "action": "set_pending",
           "operator": "李园长",
           "detail": "状态设为 pending"
         },
         {
-          "time": "2026-06-10 00:12:34",
+          "time": "2026-06-10 00:31:52",
           "action": "approve",
           "operator": "李园长",
           "detail": "审批 通过"
@@ -41,7 +41,7 @@
       "remarks": ""
     },
     {
-      "id": "BR457E8245",
+      "id": "BR064251CD",
       "code": "T004",
       "toy_name": "拼图100片世界地图",
       "borrower": "中班(张家长)",
@@ -60,10 +60,54 @@
       "returns": [],
       "history": [
         {
-          "time": "2026-06-10 00:12:34",
+          "time": "2026-06-10 00:31:52",
           "action": "create",
           "operator": "李园长",
           "detail": "创建借出单, 数量3, 到期2026-05-20"
+        },
+        {
+          "time": "2026-06-10 00:33:58",
+          "action": "followup",
+          "operator": "李园长",
+          "detail": "状态:承诺归还; 承诺:2026-06-20; 原因:家长出差在外; 备注:电话沟通语气良好"
+        }
+      ],
+      "remarks": "",
+      "followups": [
+        {
+          "time": "2026-06-10 00:33:58",
+          "operator": "李园长",
+          "status": "承诺归还",
+          "promised_date": "2026-06-20",
+          "reason": "家长出差在外",
+          "note": "电话沟通语气良好"
+        }
+      ]
+    },
+    {
+      "id": "BR36635812",
+      "code": "T002",
+      "toy_name": "毛绒小熊公仔",
+      "borrower": "大班(刘老师)",
+      "qty": 1,
+      "qty_returned": 0,
+      "borrow_date": "2026-06-10",
+      "due_date": "2026-07-10",
+      "original_due": "2026-07-10",
+      "status": "active",
+      "approval_status": "approved",
+      "operator": "李园长",
+      "handler": "刘老师",
+      "purpose": "无联系方式测试",
+      "contact": "",
+      "renew_count": 0,
+      "returns": [],
+      "history": [
+        {
+          "time": "2026-06-10 00:31:52",
+          "action": "create",
+          "operator": "李园长",
+          "detail": "创建借出单, 数量1, 到期2026-07-10"
         }
       ],
       "remarks": ""
