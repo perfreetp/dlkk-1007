@@ -1,144 +1,123 @@
 {
   "records": [
     {
-      "id": "932293ad",
-      "timestamp": "2026-06-09 23:44:35",
+      "id": "01fd57b2",
+      "timestamp": "2026-06-09 23:59:11",
       "operator": "system",
       "action": "INIT",
       "detail": "初始化库位: 4个区域, 每区2层货架, 2行2列"
     },
     {
-      "id": "08bc7424",
-      "timestamp": "2026-06-09 23:44:54",
+      "id": "1bd78f5d",
+      "timestamp": "2026-06-09 23:59:11",
       "operator": "system",
       "action": "IMPORT",
       "detail": "导入玩具台账: 成功15条, 跳过0条, 来源: sample_toys.csv"
     },
     {
-      "id": "890bc26c",
-      "timestamp": "2026-06-09 23:45:36",
-      "operator": "李老师",
+      "id": "f3ae4111",
+      "timestamp": "2026-06-09 23:59:12",
+      "operator": "李园长",
       "action": "SCAN-BORROW",
-      "detail": "操作人:李老师; 成功1件[T001]; 失败0件; [BRB6036752]T001x3借给小班(张三),到期2026-07-09"
+      "detail": "操作人:李园长; 成功1件[T003]; 失败0件; [BR5C360BFD]T003x5借给大班(王家长)[审批:pending],到期2026-07-09,用途:家长会活动,经手:王老师"
     },
     {
-      "id": "9789139d",
-      "timestamp": "2026-06-09 23:45:37",
-      "operator": "王老师",
+      "id": "1a7b9917",
+      "timestamp": "2026-06-09 23:59:27",
+      "operator": "张老师",
       "action": "SCAN-BORROW",
-      "detail": "操作人:王老师; 成功1件[T001]; 失败0件; [BR1782DD98]T001x2借给中班(李四),到期2026-07-09"
+      "detail": "操作人:张老师; 成功1件[T004]; 失败0件; [BR0D2AC895]T004x3借给小班,到期2026-07-09,用途:公开课观摩,经手:赵老师"
     },
     {
-      "id": "7d3bb285",
-      "timestamp": "2026-06-09 23:45:37",
-      "operator": "李老师",
-      "action": "SCAN-BORROW",
-      "detail": "操作人:李老师; 成功0件[]; 失败1件; "
+      "id": "7df66693",
+      "timestamp": "2026-06-10 00:00:02",
+      "operator": "李园长",
+      "action": "SCAN-APPROVE-APPROVE",
+      "detail": "成功1件; [BR5C360BFD]T003审批通过 - 大班(王家长)x5"
     },
     {
-      "id": "0bf8a152",
-      "timestamp": "2026-06-09 23:45:59",
-      "operator": "李老师",
-      "action": "SCAN-BORROW",
-      "detail": "操作人:李老师; 成功1件[T002]; 失败0件; [BRC4165D50]T002x2借给小班(张三),到期2026-05-01"
-    },
-    {
-      "id": "baff1d1c",
-      "timestamp": "2026-06-09 23:46:15",
-      "operator": "李老师",
+      "id": "6baac5d3",
+      "timestamp": "2026-06-10 00:00:16",
+      "operator": "张老师",
       "action": "SCAN-RETURN",
-      "detail": "操作人:李老师; 成功1件[T001]; 失败0件; T001归还1件(完好): BRB6036752x1"
+      "detail": "操作人:张老师; 成功1件[T003]; 失败0件; T003归还2件(完好): BR5C360BFDx2"
     },
     {
-      "id": "b7b3e7c4",
-      "timestamp": "2026-06-09 23:46:16",
-      "operator": "李老师",
-      "action": "SCAN-RENEW",
-      "detail": "操作人:李老师; 成功1件[T001]; 失败0件; [BR1782DD98]T001续借14天 2026-07-09→2026-07-23 (中班(李四))"
-    },
-    {
-      "id": "d67f749b",
-      "timestamp": "2026-06-09 23:46:16",
-      "operator": "李老师",
+      "id": "b0f4f425",
+      "timestamp": "2026-06-10 00:00:16",
+      "operator": "张老师",
       "action": "SCAN-RETURN",
-      "detail": "操作人:李老师; 成功1件[T001]; 失败0件; T001归还2件(完好): BRB6036752x2"
+      "detail": "操作人:张老师; 成功1件[T003]; 失败0件; [BR5C360BFD]T003流转记录(大班(王家长)x5):\n  [2026-06-09 23:59] 李园长 create: 创建借出单, 数量5, 到期2026-07-09\n  [2026-06-09 23:59] 李园长 set_pending: 状态设为 pending\n  [2026-06-10 00:00] 李园长 approve: 审批 通过\n  [2026-06-10 00:00] 张老师 return: 归还2件, 状况=完好, 备注=归还完整2盒\n  [2026-06-10 00:00] 张老师 return: 归还3件, 状况=轻微破损, 备注=3盒蜡笔断了几支\n  [2026-06-10 00:00] 张老师 close: 全部归还完毕, 借出单关闭; T003归还3件(轻微破损): BR5C360BFDx3"
     },
     {
-      "id": "0c68c70e",
-      "timestamp": "2026-06-09 23:46:16",
-      "operator": "李老师",
-      "action": "SCAN-RETURN",
-      "detail": "操作人:李老师; 成功1件[T002]; 失败0件; T002归还1件(完好): BRC4165D50x1"
-    },
-    {
-      "id": "b44435ea",
-      "timestamp": "2026-06-09 23:46:16",
-      "operator": "李老师",
-      "action": "SCAN-RETURN",
-      "detail": "操作人:李老师; 成功1件[T002]; 失败0件; T002归还1件(待维修): BRC4165D50x1"
-    },
-    {
-      "id": "dba91ab3",
-      "timestamp": "2026-06-09 23:46:31",
-      "operator": "李老师",
+      "id": "12a87413",
+      "timestamp": "2026-06-10 00:00:28",
+      "operator": "张老师",
       "action": "COUNT-START",
-      "detail": "开启会话CNT72A60A29, 库位=A01-01, 账面2个品种"
+      "detail": "开启会话CNTA44557B3, 库位=A01-01, 账面2个品种"
     },
     {
-      "id": "7e706901",
-      "timestamp": "2026-06-09 23:46:31",
-      "operator": "李老师",
+      "id": "93269e48",
+      "timestamp": "2026-06-10 00:00:28",
+      "operator": "张老师",
       "action": "COUNT-SCAN",
-      "detail": "会话CNT72A60A29录入3条, 更新3, 盘盈3"
+      "detail": "会话CNTA44557B3录入2条, 更新2, 盘盈0"
     },
     {
-      "id": "8d35ab99",
-      "timestamp": "2026-06-09 23:46:49",
-      "operator": "李老师",
-      "action": "COUNT-ABORT",
-      "detail": "放弃盘点会话CNT72A60A29"
+      "id": "c26f50d7",
+      "timestamp": "2026-06-10 00:00:40",
+      "operator": "王主任",
+      "action": "COUNT-REVIEW",
+      "detail": "会话CNTA44557B3复核录入3条, 复核人王主任"
     },
     {
-      "id": "280b34aa",
-      "timestamp": "2026-06-09 23:47:05",
-      "operator": "李老师",
-      "action": "COUNT-START",
-      "detail": "开启会话CNTF3EAB734, 库位=A01-01, 账面2个品种"
-    },
-    {
-      "id": "b7e1aa64",
-      "timestamp": "2026-06-09 23:47:05",
-      "operator": "李老师",
-      "action": "COUNT-SCAN",
-      "detail": "会话CNTF3EAB734录入3条, 更新3, 盘盈1"
-    },
-    {
-      "id": "4ad8c7ee",
-      "timestamp": "2026-06-09 23:47:16",
-      "operator": "李老师",
+      "id": "b17edf7c",
+      "timestamp": "2026-06-10 00:00:59",
+      "operator": "张老师",
       "action": "COUNT-APPLY",
-      "detail": "会话CNTF3EAB734调整3个品种, 净差-1; T001: 在场8→7 (-1); T002: 在场15→14 (-1); T999: 盘盈新增1件"
+      "detail": "会话CNTA44557B3调整3个品种, 净差-3; T001: 在场10→8 (-2) [复核后数量差]; T002: 在场15→13 (-2) [复核后数量差]; T999: 盘盈新增1件"
     },
     {
-      "id": "5e373b41",
-      "timestamp": "2026-06-09 23:47:16",
-      "operator": "李老师",
+      "id": "e58e6c1d",
+      "timestamp": "2026-06-10 00:00:59",
+      "operator": "张老师",
       "action": "COUNT-CLOSE",
-      "detail": "关闭盘点会话CNTF3EAB734, 是否调整=是"
+      "detail": "关闭盘点会话CNTA44557B3, 是否调整=是"
     },
     {
-      "id": "64ee4243",
-      "timestamp": "2026-06-09 23:47:38",
-      "operator": "李老师",
-      "action": "SAFETY-STOCK",
-      "detail": "设置 _default 安全库存阈值=5"
+      "id": "0111b0aa",
+      "timestamp": "2026-06-10 00:01:00",
+      "operator": "张老师",
+      "action": "COUNT-START",
+      "detail": "开启会话CNTFD048020, 库位=A01-02, 账面2个品种"
     },
     {
-      "id": "e3d5410c",
-      "timestamp": "2026-06-09 23:47:49",
-      "operator": "李老师",
+      "id": "f4835cc3",
+      "timestamp": "2026-06-10 00:01:00",
+      "operator": "张老师",
+      "action": "COUNT-SCAN",
+      "detail": "会话CNTFD048020录入1条, 更新1, 盘盈0"
+    },
+    {
+      "id": "ce7fc7d6",
+      "timestamp": "2026-06-10 00:01:00",
+      "operator": "张老师",
+      "action": "COUNT-APPLY",
+      "detail": "会话CNTFD048020调整1个品种, 净差-20; T003: 在场20→0 (-20) [未盘到按盘亏]"
+    },
+    {
+      "id": "c329cb97",
+      "timestamp": "2026-06-10 00:01:00",
+      "operator": "张老师",
+      "action": "COUNT-CLOSE",
+      "detail": "关闭盘点会话CNTFD048020, 是否调整=是"
+    },
+    {
+      "id": "0424b70d",
+      "timestamp": "2026-06-10 00:01:17",
+      "operator": "张老师",
       "action": "EXPORT",
-      "detail": "导出盘点报告, 格式=all, 前缀=inventory_report_20260609_234749"
+      "detail": "导出盘点报告, 格式=all, 前缀=inventory_report_20260610_000117"
     }
   ]
 }

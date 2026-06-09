@@ -397,6 +397,55 @@ def cmd_scan(args):
     failed = []
     details_list = []
 
+    # ========= 审批处理（--approve / --reject） =========
+    if args.approve or args.reject:
+        action = "approve" if args.approve else "reject"
+        approval_text = "approved" if args.approve else "rejected"
+        for code in codes:
+            candidates = [r for r in borrow_list if r["code"] == code and r.get("approval_status") == "pending"]
+            if not candidates:
+                failed.append((code, "无待审批借出记录"))
+                continue
+            if args.borrower:
+                candidates = [r for r in candidates if r["borrower"] == args.borrower]
+            if not candidates:
+                failed.append((code, f"无{args.borrower}的待审批记录"))
+                continue
+            for rec in candidates:
+                old_status = rec.get("approval_status", "pending")
+                rec["approval_status"] = approval_text
+                rec["status"] = "active" if action == "approve" else "rejected"
+                if action == "approve" and old_status == "pending":
+                    qty_pending = rec["qty"] - rec["qty_returned"]
+                    it = items[code]
+                    if qty_pending <= it.get("qty_available", 0):
+                        it["qty_available"] -= qty_pending
+                        it["qty_borrowed"] += qty_pending
+                    else:
+                        failed.append((code, f"审批时可用库存不足: 需{qty_pending}/在库{it.get('qty_available',0)}"))
+                        rec["approval_status"] = old_status
+                        rec["status"] = "pending"
+                        continue
+                rec.setdefault("history", []).append({
+                    "time": now_str(),
+                    "action": action,
+                    "operator": operator,
+                    "detail": f"审批 {'通过' if action == 'approve' else '拒绝'}" + (f": {args.remark}" if args.remark else "")
+                })
+                success.append(code)
+                details_list.append(f"[{rec['id']}]{code}审批{'通过' if action == 'approve' else '拒绝'} - {rec['borrower']}x{rec['qty']}")
+        save_inventory(inv)
+        save_borrow_records(borrow_db)
+        log_action(f"SCAN-APPROVE-{action.upper()}", f"成功{len(success)}件; {'; '.join(details_list[:500])}", operator)
+        print(f"\n📊 审批结果操作人: {operator}")
+        print(f"  成功: {len(success)} 件")
+        if failed:
+            print(f"  失败: {len(failed)} 件")
+            for c, r in failed: print(f"    - {c}: {r}")
+        for d in details_list[:8]:
+            print(f"    • {d}")
+        return
+
     for code in codes:
         # ========= 入库 =========
         if op == "inbound":
@@ -458,8 +507,25 @@ def cmd_scan(args):
             overdue_days = cfg.get("overdue_days", 30)
             due_date_str = args.due or (datetime.now() + timedelta(days=overdue_days)).strftime("%Y-%m-%d")
             borrow_date_str = now_str()[:10]
+            approval_status = args.approval or "approved"
+            purpose = args.purpose or ""
+            handler = args.handler or operator
+            contact = args.contact or ""
+            first_remark = args.remark or ""
 
             rec_id = new_id("BR")
+            history = [{
+                "time": now_str(),
+                "action": "create",
+                "operator": operator,
+                "detail": f"创建借出单, 数量{qty_per}, 到期{due_date_str}"
+            }]
+            if first_remark:
+                history.append({"time": now_str(), "action": "remark", "operator": operator, "detail": f"备注: {first_remark}"})
+            if approval_status != "approved":
+                history.append({"time": now_str(), "action": f"set_{approval_status}", "operator": operator,
+                                "detail": f"状态设为 {approval_status}"})
+
             borrow_list.append({
                 "id": rec_id,
                 "code": code,
@@ -470,14 +536,21 @@ def cmd_scan(args):
                 "borrow_date": borrow_date_str,
                 "due_date": due_date_str,
                 "original_due": due_date_str,
-                "status": "active",
+                "status": "active" if approval_status == "approved" else (approval_status if approval_status == "rejected" else "pending"),
+                "approval_status": approval_status,
                 "operator": operator,
+                "handler": handler,
+                "purpose": purpose,
+                "contact": contact,
                 "renew_count": 0,
-                "returns": []
+                "returns": [],
+                "history": history,
+                "remarks": first_remark
             })
 
-            it["qty_available"] -= qty_per
-            it["qty_borrowed"] += qty_per
+            if approval_status == "approved":
+                it["qty_available"] -= qty_per
+                it["qty_borrowed"] += qty_per
             it["last_scan"] = now_str()
             it["scan_count"] += 1
             it["status"] = recompute_status(it)
@@ -486,7 +559,8 @@ def cmd_scan(args):
             it["due_date"] = ""
 
             success.append(code)
-            details_list.append(f"[{rec_id}]{code}x{qty_per}借给{args.borrower},到期{due_date_str}")
+            extra = f"[审批:{approval_status}]" if approval_status != "approved" else ""
+            details_list.append(f"[{rec_id}]{code}x{qty_per}借给{args.borrower}{extra},到期{due_date_str},用途:{purpose or '未填'},经手:{handler}")
 
         # ========= 归还 =========
         elif op == "return":
@@ -520,13 +594,37 @@ def cmd_scan(args):
                 remaining_needed -= take
                 returned_total += take
                 rec_ids_used.append(f"{rec['id']}x{take}")
+                return_detail = f"归还{take}件, 状况={condition}"
+                if args.remark:
+                    return_detail += f", 备注={args.remark}"
                 rec["returns"].append({
                     "date": now_str()[:10],
                     "qty": take,
                     "condition": condition,
-                    "operator": operator
+                    "operator": operator,
+                    "remark": args.remark or ""
+                })
+                rec.setdefault("history", []).append({
+                    "time": now_str(),
+                    "action": "return",
+                    "operator": operator,
+                    "detail": return_detail
                 })
                 rec["status"] = "closed" if rec["qty_returned"] >= rec["qty"] else "partial"
+
+                if rec["status"] == "closed":
+                    rec["history"].append({
+                        "time": now_str(),
+                        "action": "close",
+                        "operator": operator,
+                        "detail": "全部归还完毕, 借出单关闭"
+                    })
+                    flow_text_parts = []
+                    for h in rec.get("history", []):
+                        flow_text_parts.append(f"  [{h['time'][:16]}] {h.get('operator','')} {h['action']}: {h['detail']}")
+                    flow_text = "\n".join(flow_text_parts)
+                    details_list.append(
+                        f"[{rec['id']}]{code}流转记录({rec['borrower']}x{rec['qty']}):\n{flow_text}")
 
             if returned_total <= 0:
                 failed.append((code, "没有可归还的数量"))
@@ -578,6 +676,15 @@ def cmd_scan(args):
                 rec["due_date"] = new_due
                 rec["renew_count"] += 1
                 rec["status"] = "active"
+                renew_detail = f"续借{days}天 {old_due}→{new_due}"
+                if args.remark:
+                    renew_detail += f", 备注={args.remark}"
+                rec.setdefault("history", []).append({
+                    "time": now_str(),
+                    "action": "renew",
+                    "operator": operator,
+                    "detail": renew_detail
+                })
                 details_list.append(f"[{rec['id']}]{code}续借{days}天 {old_due}→{new_due} ({rec['borrower']})")
             success.append(code)
             items[code]["last_scan"] = now_str()
@@ -719,7 +826,11 @@ def cmd_count_start(args):
         "operator": operator,
         "location": loc or "ALL",
         "status": "draft",
+        "stage": "scanning",
         "counts": {},
+        "review_counts": {},
+        "reviewer": None,
+        "reviewed_at": None,
         "book_snapshot": {},
         "adjustments_made": False,
         "note": args.note or ""
@@ -764,12 +875,24 @@ def cmd_count_scan(args):
     entries = args.entries
     pairs = []
     if entries:
-        for raw in entries:
-            parts = raw.strip().split()
-            if not parts:
+        i = 0
+        while i < len(entries):
+            raw = entries[i].strip()
+            if not raw:
+                i += 1
                 continue
+            parts = raw.split()
             code = parts[0]
-            qty = int(parts[1]) if len(parts) > 1 and parts[1].lstrip("-").isdigit() else 1
+            qty = 1
+            if len(parts) > 1 and parts[1].lstrip("-").isdigit():
+                qty = int(parts[1])
+                i += 1
+            else:
+                if i + 1 < len(entries) and entries[i + 1].lstrip("-").isdigit():
+                    qty = int(entries[i + 1])
+                    i += 2
+                else:
+                    i += 1
             pairs.append((code, qty))
 
     if args.interactive:
@@ -820,56 +943,220 @@ def cmd_count_diff(args):
         print("❌ 没有进行中的盘点会话，请先 count-start")
         return
 
+    stage = session.get("stage", "scanning")
+    reviewer = session.get("reviewer")
     print(f"\n🔍 盘点差异报告 [{session['id']}] 库位:{session['location']}")
-    print(f"  操作人: {session['operator']}  开始: {session['started_at']}")
+    print(f"  操作人: {session['operator']}  开始: {session['started_at']}  阶段: {stage}")
+    if reviewer:
+        print(f"  复核人: {reviewer}  复核时间: {session.get('reviewed_at')}")
     book = session["book_snapshot"]
     actual = session["counts"]
+    review = session.get("review_counts", {})
+
+    def get_effective(code):
+        r = review.get(code)
+        return (r["qty"] if r else actual[code]["qty"]) if code in actual else 0
 
     matched = []
+    matched_reviewed = []
     missing = []
+    missing_reviewed = []
     diff_rows = []
+    diff_reviewed = []
     extra = []
+    extra_reviewed = []
     total_book_onhand = 0
     total_actual_onhand = 0
 
     for code, b in book.items():
         a = actual.get(code)
-        actual_qty = a["qty"] if a else 0
+        r = review.get(code)
+        actual_qty = get_effective(code)
         book_onhand = b["qty_onhand_book"]
         total_book_onhand += book_onhand
         total_actual_onhand += actual_qty
         diff = actual_qty - book_onhand
-        if a is None:
-            missing.append([code, b["name"], f"{b['qty_available']}+{b['qty_repair']}", book_onhand, 0, f"-{book_onhand}", "未盘到"])
+        reviewed = (r is not None)
+        base_row = [code, b["name"], f"{b['qty_available']}+{b['qty_repair']}", book_onhand, actual_qty]
+        if a is None and not reviewed:
+            missing.append(base_row + [f"-{book_onhand}", "未盘到"])
+        elif a is None and reviewed:
+            missing_reviewed.append(base_row + [f"-{book_onhand}", "复核后未盘到(确认)"])
         elif diff != 0:
             sign = "+" if diff > 0 else ""
-            diff_rows.append([code, b["name"], f"{b['qty_available']}+{b['qty_repair']}",
-                              book_onhand, actual_qty, f"{sign}{diff}",
-                              "盘盈" if diff > 0 else "盘亏"])
+            tag = "盘盈" if diff > 0 else "盘亏"
+            row = base_row + [f"{sign}{diff}", tag]
+            if reviewed:
+                row[-1] = f"{tag}(复核确认)"
+                diff_reviewed.append(row)
+            else:
+                diff_rows.append(row)
         else:
-            matched.append(code)
+            if reviewed:
+                matched_reviewed.append(code)
+            else:
+                matched.append(code)
 
-    for code, a in actual.items():
-        if code not in book:
-            extra.append([code, a.get("name", "?"), "-", 0, a["qty"], f"+{a['qty']}", "盘盈(新)"])
+    for code in list(actual.keys()) + [c for c in review if c not in actual]:
+        if code in book:
+            continue
+        if code in review and code not in actual:
+            a = review[code]
+            extra_reviewed.append([code, a.get("name", "?"), "-", 0, a["qty"], f"+{a['qty']}", "盘盈(新)(复核确认)"])
             total_actual_onhand += a["qty"]
+        elif code in actual:
+            a = actual[code]
+            r = review.get(code)
+            qty = r["qty"] if r else a["qty"]
+            tag = "盘盈(新)" if not r else "盘盈(新)(复核确认)"
+            (extra_reviewed if r else extra).append([code, a.get("name", "?"), "-", 0, qty, f"+{qty}", tag])
+            if code not in actual:
+                total_actual_onhand += qty
 
-    print(f"\n  汇总: 账面在场{len(book)}个品种/{total_book_onhand}件 → 实盘在场{len(actual)}个品种/{total_actual_onhand}件")
-    print(f"         ✔ 相符:{len(matched)}  ⚠ 数量差:{len(diff_rows)}  ❌ 未盘到:{len(missing)}  ➕ 盘盈新:{len(extra)}")
+    print(f"\n  汇总: 账面在场{len(book)}个品种/{total_book_onhand}件 → 实盘在场{len(actual) + len(review) - len(set(actual)&set(review))}个品种/{total_actual_onhand}件")
+    print(f"         ✔ 相符:{len(matched)}  ✔复核后相符:{len(matched_reviewed)}  ⚠ 待复核数量差:{len(diff_rows)}  ✔已复核差异:{len(diff_reviewed)}")
+    print(f"         ❌ 未盘到:{len(missing)}  ❌复核后确认未盘到:{len(missing_reviewed)}  ➕ 待复核盘盈:{len(extra)}  ✔已复核盘盈:{len(extra_reviewed)}")
+
     if missing:
-        print(f"\n❌ 未盘到 (账面在场但没扫到): {len(missing)}")
+        print(f"\n❌ 未盘到 (账面在场但没扫到, 待复核): {len(missing)}")
         print_table(["编号", "名称", "细分(在库+维修)", "账面在场", "实盘", "差异", "状态"],
                     missing[:args.limit] if args.limit else missing)
+    if missing_reviewed:
+        print(f"\n❌ 未盘到 (复核后确认按盘亏): {len(missing_reviewed)}")
+        print_table(["编号", "名称", "细分(在库+维修)", "账面在场", "实盘", "差异", "状态"],
+                    missing_reviewed[:args.limit] if args.limit else missing_reviewed)
     if diff_rows:
-        print(f"\n⚠ 数量不符: {len(diff_rows)}")
+        print(f"\n⚠ 数量不符(待复核确认): {len(diff_rows)}")
         print_table(["编号", "名称", "细分(在库+维修)", "账面在场", "实盘", "差异", "判定"],
                     diff_rows[:args.limit] if args.limit else diff_rows)
+    if diff_reviewed:
+        print(f"\n⚠ 数量不符(复核后已确认): {len(diff_reviewed)}")
+        print_table(["编号", "名称", "细分(在库+维修)", "账面在场", "实盘", "差异", "判定"],
+                    diff_reviewed[:args.limit] if args.limit else diff_reviewed)
     if extra:
-        print(f"\n➕ 盘盈(台账无但实物有): {len(extra)}")
+        print(f"\n➕ 盘盈(待复核确认): {len(extra)}")
         print_table(["编号", "名称", "细分", "账面在场", "实盘", "差异", "判定"],
                     extra[:args.limit] if args.limit else extra)
-    if not missing and not diff_rows and not extra:
+    if extra_reviewed:
+        print(f"\n➕ 盘盈(复核后已确认): {len(extra_reviewed)}")
+        print_table(["编号", "名称", "细分", "账面在场", "实盘", "差异", "判定"],
+                    extra_reviewed[:args.limit] if args.limit else extra_reviewed)
+    if not missing and not missing_reviewed and not diff_rows and not diff_reviewed and not extra and not extra_reviewed:
         print("\n✅ 账实完全相符！")
+    elif stage == "scanning":
+        print("\n💡 提示: 初盘录入完成后可用 'check count-review' 进入复核环节, 对差异部分补扫确认")
+
+
+def cmd_count_review(args):
+    cs_obj, session = find_active_session()
+    if not session:
+        print("❌ 没有进行中的盘点会话，请先 count-start")
+        return
+    cfg = get_config()
+    reviewer = args.reviewer or cfg.get("operator", "system")
+    book = session["book_snapshot"]
+    actual = session["counts"]
+    review = session.get("review_counts", {})
+
+    if args.only_diff and not args.entries and not args.interactive:
+        print(f"\n📋 当前会话待复核差异 (会话: {session['id']})")
+        pending_count = 0
+        for code, b in book.items():
+            a = actual.get(code)
+            r = review.get(code)
+            actual_qty = r["qty"] if r else (a["qty"] if a else 0)
+            book_onhand = b["qty_onhand_book"]
+            if actual_qty != book_onhand:
+                pending_count += 1
+                sign = "+" if actual_qty > book_onhand else ""
+                status = "(未扫)" if a is None and r is None else "(有差)"
+                print(f"  {code} | {b['name'][:14]:<14} | 账面{book_onhand} | 实盘{actual_qty} | 差{sign}{actual_qty-book_onhand} {status}")
+        for code in list(actual.keys()) + [c for c in review if c not in actual]:
+            if code in book:
+                continue
+            if code not in review:
+                pending_count += 1
+                qty = actual.get(code, review.get(code))["qty"]
+                print(f"  {code} | {actual.get(code, review.get(code)).get('name','?')[:14]:<14} | 账面0 | 实盘{qty} | 差+{qty} (盘盈)")
+        print(f"\n共 {pending_count} 项差异待复核。请补扫或重新确认后用 count-review 录入复核数量。")
+        session["stage"] = "reviewing"
+        session["reviewer"] = reviewer
+        save_count_sessions(cs_obj)
+        return
+
+    entries = args.entries
+    pairs = []
+    if entries:
+        i = 0
+        while i < len(entries):
+            raw = entries[i].strip()
+            if not raw:
+                i += 1
+                continue
+            parts = raw.split()
+            code = parts[0]
+            qty = 1
+            if len(parts) > 1 and parts[1].lstrip("-").isdigit():
+                qty = int(parts[1])
+                i += 1
+            else:
+                if i + 1 < len(entries) and entries[i + 1].lstrip("-").isdigit():
+                    qty = int(entries[i + 1])
+                    i += 2
+                else:
+                    i += 1
+            pairs.append((code, qty))
+
+    if args.interactive:
+        print(f"\n📋 盘点复核录入 [{session['id']}] 复核人: {reviewer}")
+        print("  格式: <编号> [数量] (输入 q 或空行结束)")
+        while True:
+            try:
+                line = input("> ").strip()
+                if line.lower() in ("q", "quit", "exit", ""):
+                    break
+                parts = line.split()
+                code = parts[0]
+                qty = int(parts[1]) if len(parts) > 1 and parts[1].lstrip("-").isdigit() else 1
+                pairs.append((code, qty))
+            except (EOFError, ValueError):
+                continue
+
+    if not pairs and not args.only_diff:
+        session["stage"] = "reviewing"
+        session["reviewer"] = reviewer
+        session["reviewed_at"] = now_str()
+        save_count_sessions(cs_obj)
+        print(f"✅ 已进入复核阶段，复核人: {reviewer}")
+        return
+
+    inv = None
+    updated = 0
+    inv_names = {}
+    for code, qty in pairs:
+        name = ""
+        snap = book.get(code)
+        if snap:
+            name = snap["name"]
+        else:
+            prev = actual.get(code)
+            if prev:
+                name = prev.get("name", "")
+            else:
+                if inv is None:
+                    inv = get_inventory()
+                    inv_names = inv["items"]
+                name = inv_names.get(code, {}).get("name", f"未知({code})")
+        review[code] = {"qty": qty, "name": name, "reviewed_by": reviewer, "reviewed_at": now_str()}
+        updated += 1
+    session["review_counts"] = review
+    session["stage"] = "reviewing"
+    session["reviewer"] = reviewer
+    session["reviewed_at"] = now_str()
+    save_count_sessions(cs_obj)
+    log_action("COUNT-REVIEW", f"会话{session['id']}复核录入{len(pairs)}条, 复核人{reviewer}", reviewer)
+    print(f"\n✅ 已复核 {len(pairs)} 条  更新:{updated}")
+    print(f"  进度: 已复核 {len(review)} / 账面 {len(book)}")
 
 
 def cmd_count_close(args):
@@ -890,8 +1177,20 @@ def cmd_count_close(args):
         locs = list(cfg["locations"].keys())
         default_loc = locs[0] if locs else "A01-01"
 
-        for code, a in session["counts"].items():
-            actual_qty = a["qty"]
+        effective_counts = {}
+        for c, a in session["counts"].items():
+            effective_counts[c] = a["qty"]
+        for c, r in session.get("review_counts", {}).items():
+            effective_counts[c] = r["qty"]
+        for c in session["book_snapshot"].keys():
+            if c not in effective_counts:
+                effective_counts[c] = 0
+
+        for code, actual_qty in effective_counts.items():
+            snap_info = session["book_snapshot"].get(code, {})
+            count_info = session["counts"].get(code)
+            review_info = session.get("review_counts", {}).get(code)
+            source_info = review_info or count_info or {}
             if code in items:
                 it = items[code]
                 qa = it.get("qty_available", 0)
@@ -899,18 +1198,29 @@ def cmd_count_close(args):
                 book_onhand = qa + qr
                 diff = actual_qty - book_onhand
                 if diff != 0:
-                    new_qa = max(0, qa + diff)
-                    it["qty_available"] = new_qa
-                    it["qty_total"] = max(0, it.get("qty_total", 0) + diff)
-                    if new_qa == 0 and it.get("qty_borrowed", 0) == 0 and qr == 0:
-                        it["qty_scrapped"] = it.get("qty_scrapped", 0) - diff if diff < 0 else it.get("qty_scrapped", 0)
+                    if diff < 0:
+                        loss = -diff
+                        from_repair = min(qr, loss)
+                        from_available = loss - from_repair
+                        it["qty_repair"] = max(0, qr - from_repair)
+                        it["qty_available"] = max(0, qa - from_available)
+                        it["qty_scrapped"] = it.get("qty_scrapped", 0) + loss
+                        it["qty_total"] = max(0, it.get("qty_total", 0) - loss)
+                    else:
+                        it["qty_available"] = qa + diff
+                        it["qty_total"] = it.get("qty_total", 0) + diff
                     it["status"] = recompute_status(it)
                     it["last_scan"] = now_str()
                     it["scan_count"] = it.get("scan_count", 0) + 1
                     adjust_count += 1
                     adjust_qty_net += diff
-                    details.append(f"{code}: 在场{book_onhand}→{actual_qty} ({diff:+d})")
+                    if review_info:
+                        reason = "复核后数量差" if count_info else "复核后未盘到按盘亏"
+                    else:
+                        reason = "未盘到按盘亏" if count_info is None else "数量差"
+                    details.append(f"{code}: 在场{book_onhand}→{actual_qty} ({diff:+d}) [{reason}]")
             else:
+                a = source_info
                 inv["items"][code] = {
                     "code": code,
                     "name": a.get("name", f"玩具{code}"),
@@ -980,6 +1290,8 @@ def cmd_check(args):
             cmd_count_scan(args)
         elif sub == "diff":
             cmd_count_diff(args)
+        elif sub == "review":
+            cmd_count_review(args)
         elif sub == "close":
             cmd_count_close(args)
         elif sub == "list":
@@ -1266,19 +1578,53 @@ def cmd_report(args):
         return
 
     if args.type == "borrow":
-        print("\n📒 借出明细台账")
+        print("\n📒 借出明细台账 (含审批状态、用途、经手人、联系方式)")
         sf = args.status or "all"
-        filtered = [r for r in borrow_list if sf == "all" or r["status"] == sf]
+        filtered = [r for r in borrow_list if sf == "all" or r["status"] == sf
+                    or (sf == "overdue" and r.get("approval_status") == "pending")]
         if args.borrower:
             filtered = [r for r in filtered if r["borrower"] == args.borrower]
         print(f"  条件: 状态={sf}, 借用人={args.borrower or '全部'}, 共{len(filtered)}条")
-        headers = ["借出单号", "编号", "玩具名称", "借出人", "借出", "已还", "未还", "借出日", "到期日", "续借", "状态"]
+
+        by_person = defaultdict(lambda: {"records": [], "total_out": 0, "total_qty": 0})
+        for r in filtered:
+            outstanding = r["qty"] - r["qty_returned"]
+            if r["status"] in ("active", "partial", "overdue"):
+                by_person[r["borrower"]]["records"].append(r)
+                by_person[r["borrower"]]["total_out"] += outstanding
+                by_person[r["borrower"]]["total_qty"] += r["qty"]
+
+        headers = ["借出单号", "编号", "玩具名称", "借出人", "借出", "已还", "未还",
+                   "借出日", "到期日", "续借", "审批", "用途", "经手人", "联系方式", "状态"]
         rows = []
         for r in filtered:
             rows.append([r["id"], r["code"], r["toy_name"], r["borrower"],
                          r["qty"], r["qty_returned"], r["qty"] - r["qty_returned"],
-                         r["borrow_date"], r["due_date"], r.get("renew_count", 0), r["status"]])
+                         r["borrow_date"], r["due_date"], r.get("renew_count", 0),
+                         r.get("approval_status", "approved"),
+                         r.get("purpose", "")[:8] if r.get("purpose") else "",
+                         r.get("handler", "")[:6] if r.get("handler") else "",
+                         r.get("contact", "")[:10] if r.get("contact") else "",
+                         r["status"]])
         print_table(headers, rows)
+
+        if by_person:
+            print(f"\n📌 借用人未还责任汇总 (共{len(by_person)}人):")
+            sum_headers = ["借用人", "未结清笔数", "借出总量", "仍未还数"]
+            sum_rows = []
+            for person in sorted(by_person.keys()):
+                info = by_person[person]
+                sum_rows.append([person, len(info["records"]), info["total_qty"], info["total_out"]])
+            print_table(sum_headers, sum_rows)
+
+        if args.borrower:
+            person = args.borrower
+            his = [r for r in borrow_list if r["borrower"] == person]
+            active = [r for r in his if r["status"] in ("active", "partial", "overdue")]
+            for r in active:
+                print(f"\n📜 [{r['id']}] {person} 借 {r['toy_name']}(x{r['qty']}) 完整流转记录:")
+                for h in r.get("history", []):
+                    print(f"  [{h.get('time','?')[:16]}] {h.get('operator','')} {h['action']}: {h['detail']}")
         return
 
     if args.type == "logs":
@@ -1423,14 +1769,17 @@ def cmd_export(args):
             writer.writerow([
                 "借出单号", "玩具编号", "玩具名称", "借出人",
                 "借出数量", "已还数量", "未还数量",
-                "借出日期", "应还日期", "原始应还", "续借次数", "状态", "操作人"
+                "借出日期", "应还日期", "原始应还", "续借次数", "审批状态",
+                "用途", "经手人", "联系方式", "备注", "状态", "操作人"
             ])
             for r in borrow_list:
                 writer.writerow([
                     r["id"], r["code"], r["toy_name"], r["borrower"],
                     r["qty"], r["qty_returned"], r["qty"] - r["qty_returned"],
                     r["borrow_date"], r["due_date"], r.get("original_due", ""),
-                    r.get("renew_count", 0), r["status"], r.get("operator", "")
+                    r.get("renew_count", 0), r.get("approval_status", "approved"),
+                    r.get("purpose", ""), r.get("handler", ""), r.get("contact", ""),
+                    r.get("remarks", ""), r["status"], r.get("operator", "")
                 ])
         print(f"📄 CSV盘点表 -> {csv_file}")
         print(f"📄 CSV借出台账 -> {borrow_csv}")
@@ -1542,6 +1891,15 @@ def cmd_export(args):
             if today_d > due:
                 overdue_list.append((r["code"], r["toy_name"], r["borrower"], r["qty"] - r["qty_returned"], (today_d - due).days))
 
+        by_person_outstanding = defaultdict(lambda: {"records": [], "qty": 0})
+        for r in borrow_list:
+            if r["status"] in ("active", "partial", "overdue") and r.get("approval_status", "approved") == "approved":
+                out = r["qty"] - r["qty_returned"]
+                if out > 0:
+                    by_person_outstanding[r["borrower"]]["records"].append(
+                        (r["id"], r["code"], r["toy_name"], r["qty"], r["qty_returned"], out, r["due_date"], r.get("purpose", ""), r.get("handler", ""), r.get("contact", "")))
+                    by_person_outstanding[r["borrower"]]["qty"] += out
+
         ss = cfg.get("safety_stock", {})
         low_stock = []
         for cat, stat in cat_stats.items():
@@ -1600,6 +1958,19 @@ def cmd_export(args):
                 for code, it in loc_items:
                     sts = short_status_text(it)
                     f.write(f"      {code} | {it['name'][:16]} | {it['shelf']} | {sts}\n")
+
+            if by_person_outstanding:
+                f.write("\n【五、借用人未还责任汇总】\n")
+                f.write(f"  共 {len(by_person_outstanding)} 人/单位  {sum(v['qty'] for v in by_person_outstanding.values())} 件未归还\n")
+                f.write("  " + "-" * 56 + "\n")
+                for person in sorted(by_person_outstanding.keys()):
+                    info = by_person_outstanding[person]
+                    f.write(f"\n  👤 {person}  —  未归还{info['qty']}件, 涉及{len(info['records'])}笔借出\n")
+                    f.write(f"    {'单号':<12}{'编号':<7}{'玩具名称':<16}{'借':>3}{'未还':>4}  {'到期日':<12}{'用途/经手':<16}{'联系方式':<12}\n")
+                    for rid, code, name, qty, ret, out, due, purpose, handler, contact in info["records"]:
+                        ph = f"{purpose or ''}/{handler or ''}"
+                        f.write(f"    {rid:<12}{code:<7}{name[:16]:<16}{qty:>3}{out:>4}  {due:<12}{ph[:16]:<16}{contact[:12]:<12}\n")
+                f.write("\n  建议: 对逾期未还或长期未归还的借用人及时沟通催还\n")
 
             f.write("\n" + "=" * 64 + "\n")
             f.write("              报告结束  —  请负责人审阅\n")
@@ -1677,6 +2048,13 @@ def build_parser():
     p_scan.add_argument("--condition", choices=["完好", "轻微破损", "待维修", "破损"])
     p_scan.add_argument("--reason")
     p_scan.add_argument("--from-repair", action="store_true")
+    p_scan.add_argument("--purpose")
+    p_scan.add_argument("--handler")
+    p_scan.add_argument("--contact")
+    p_scan.add_argument("--approval", choices=["pending", "approved", "rejected"])
+    p_scan.add_argument("--approve", action="store_true")
+    p_scan.add_argument("--reject", action="store_true")
+    p_scan.add_argument("--remark")
     p_scan.set_defaults(func=cmd_scan)
 
     # move
@@ -1714,6 +2092,13 @@ def build_parser():
     cs_diff = check_sub.add_parser("count-diff", help="查看差异")
     cs_diff.add_argument("--limit", type=int)
     cs_diff.set_defaults(count_cmd="diff", func=cmd_check)
+
+    cs_review = check_sub.add_parser("count-review", help="复核环节：标记待复核或补扫差异")
+    cs_review.add_argument("--reviewer", help="复核人(默认取默认操作人)")
+    cs_review.add_argument("--only-diff", action="store_true", help="只显示当前有差异的编号提示补扫")
+    cs_review.add_argument("entries", nargs="*")
+    cs_review.add_argument("--interactive", action="store_true")
+    cs_review.set_defaults(count_cmd="review", func=cmd_check)
 
     cs_close = check_sub.add_parser("count-close", help="结束会话(可选调账)")
     cs_close.add_argument("--apply", action="store_true", help="应用差异调整到库存")
